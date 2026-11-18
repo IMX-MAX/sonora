@@ -250,11 +250,10 @@ impl Element for Flight {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
-        let layout_id = self
-            .inner
-            .as_mut()
-            .expect("a flight lays out once")
-            .request_layout(window, cx);
+        let Some(inner) = self.inner.as_mut() else {
+            return (window.request_layout(gpui::Style::default(), [], cx), ());
+        };
+        let layout_id = inner.request_layout(window, cx);
         (layout_id, ())
     }
 
@@ -282,95 +281,95 @@ impl Element for Flight {
             .as_ref()
             .and_then(|name| cx.try_global::<Sightings>()?.0.get(name).copied())
             .map(|(bounds, _)| bounds);
-        let (offset, zoom) = window.with_element_state(
-            id.expect("a flight has an id"),
-            |course: Option<Course>, window| {
-                let mut course = course.unwrap_or_else(|| Course {
-                    spring: transfer_spring,
-                    drawn: None,
-                    viewport,
-                    x: Sprung::at(0.),
-                    y: Sprung::at(0.),
-                    scale: Sprung::at(1.),
-                    from: 1.,
-                    to: 1.,
-                });
-                match course.drawn {
-                    Some(last) if follows && course.viewport == viewport && moved(last, bounds) => {
-                        let flying =
-                            !course.x.resting() || !course.y.resting() || !course.scale.resting();
+        let Some(id) = id else {
+            return false;
+        };
+        let (offset, zoom) = window.with_element_state(id, |course: Option<Course>, window| {
+            let mut course = course.unwrap_or_else(|| Course {
+                spring: transfer_spring,
+                drawn: None,
+                viewport,
+                x: Sprung::at(0.),
+                y: Sprung::at(0.),
+                scale: Sprung::at(1.),
+                from: 1.,
+                to: 1.,
+            });
+            match course.drawn {
+                Some(last) if follows && course.viewport == viewport && moved(last, bounds) => {
+                    let flying =
+                        !course.x.resting() || !course.y.resting() || !course.scale.resting();
+                    course
+                        .x
+                        .shift(f32::from(last.center().x - bounds.center().x));
+                    course
+                        .y
+                        .shift(f32::from(last.center().y - bounds.center().y));
+                    if scales && bounds.size.width > Pixels::ZERO {
+                        let ratio = last.size.width / bounds.size.width;
                         course
-                            .x
-                            .shift(f32::from(last.center().x - bounds.center().x));
-                        course
-                            .y
-                            .shift(f32::from(last.center().y - bounds.center().y));
-                        if scales && bounds.size.width > Pixels::ZERO {
-                            let ratio = last.size.width / bounds.size.width;
-                            course
-                                .scale
-                                .shift(course.scale.position() * ratio - course.scale.position());
-                            course.from = match flying {
-                                true => course.from * ratio,
-                                false => course.scale.position(),
-                            };
-                        }
-                        if !flying {
-                            course.spring = spring;
-                        }
+                            .scale
+                            .shift(course.scale.position() * ratio - course.scale.position());
+                        course.from = match flying {
+                            true => course.from * ratio,
+                            false => course.scale.position(),
+                        };
                     }
-                    Some(_) => {}
-                    None => {
-                        if let Some(start) = sighting.filter(|_| bounds.size.width > Pixels::ZERO) {
-                            let from = start.center() - bounds.center();
-                            course.x.jump(f32::from(from.x));
-                            course.y.jump(f32::from(from.y));
-                            if scales {
-                                course.from = start.size.width / bounds.size.width;
-                                course.to = 1.;
-                                course.scale.jump(course.from);
-                            }
-                        }
+                    if !flying {
+                        course.spring = spring;
                     }
                 }
-                if course.viewport != viewport {
-                    course.x.jump(0.);
-                    course.y.jump(0.);
-                    course.scale.jump(1.);
+                Some(_) => {}
+                None => {
+                    if let Some(start) = sighting.filter(|_| bounds.size.width > Pixels::ZERO) {
+                        let from = start.center() - bounds.center();
+                        course.x.jump(f32::from(from.x));
+                        course.y.jump(f32::from(from.y));
+                        if scales {
+                            course.from = start.size.width / bounds.size.width;
+                            course.to = 1.;
+                            course.scale.jump(course.from);
+                        }
+                    }
                 }
-                course.drawn = Some(bounds);
-                course.viewport = viewport;
-                // Home is its own layout, unless it is leaving for where another stands.
-                if heading.is_some() {
-                    course.spring = transfer_spring;
-                }
-                let spring = course.spring;
-                let (home, size) = match heading.filter(|_| bounds.size.width > Pixels::ZERO) {
-                    Some(there) => (
-                        there.center() - bounds.center(),
-                        there.size.width / bounds.size.width,
-                    ),
-                    None => (Point::default(), 1.),
-                };
-                if course.to != size {
-                    course.from = course.scale.position();
-                    course.to = size;
-                }
-                let x = course
-                    .x
-                    .follow(f32::from(home.x), spring, OFFSET_REST, window, cx);
-                let y = course
-                    .y
-                    .follow(f32::from(home.y), spring, OFFSET_REST, window, cx);
-                let scale = course.scale.follow(size, spring, SCALE_REST, window, cx);
-                let zoom = Zoom {
-                    now: scale,
-                    from: course.from,
-                    to: course.to,
-                };
-                ((point(px(x), px(y)), zoom), course)
-            },
-        );
+            }
+            if course.viewport != viewport {
+                course.x.jump(0.);
+                course.y.jump(0.);
+                course.scale.jump(1.);
+            }
+            course.drawn = Some(bounds);
+            course.viewport = viewport;
+            // Home is its own layout, unless it is leaving for where another stands.
+            if heading.is_some() {
+                course.spring = transfer_spring;
+            }
+            let spring = course.spring;
+            let (home, size) = match heading.filter(|_| bounds.size.width > Pixels::ZERO) {
+                Some(there) => (
+                    there.center() - bounds.center(),
+                    there.size.width / bounds.size.width,
+                ),
+                None => (Point::default(), 1.),
+            };
+            if course.to != size {
+                course.from = course.scale.position();
+                course.to = size;
+            }
+            let x = course
+                .x
+                .follow(f32::from(home.x), spring, OFFSET_REST, window, cx);
+            let y = course
+                .y
+                .follow(f32::from(home.y), spring, OFFSET_REST, window, cx);
+            let scale = course.scale.follow(size, spring, SCALE_REST, window, cx);
+            let zoom = Zoom {
+                now: scale,
+                from: course.from,
+                to: course.to,
+            };
+            ((point(px(x), px(y)), zoom), course)
+        });
         let scale = zoom.now;
         if let Some(report) = &self.zoom {
             report.set(zoom);
@@ -383,7 +382,9 @@ impl Element for Flight {
         }
 
         let flying = offset != Point::default() || scale != 1.;
-        let mut inner = self.inner.take().expect("a flight prepaints once");
+        let Some(mut inner) = self.inner.take() else {
+            return false;
+        };
         if flying && self.above {
             let element_offset = window.element_offset();
             window.defer_draw(inner, element_offset, 0, None);

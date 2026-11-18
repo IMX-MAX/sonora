@@ -225,7 +225,11 @@ impl Glide {
             let target = held(drift.target, scroll);
             let springing = drift.springing;
             let settled = if springing {
-                let spring = self.spring.expect("a springing glide has a spring");
+                let Some(spring) = self.spring else {
+                    drift.gliding = false;
+                    drift.springing = false;
+                    return;
+                };
                 let x = spring.step(
                     SpringState {
                         position: drift.shown.x.as_f32(),

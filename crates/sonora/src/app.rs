@@ -79,6 +79,7 @@ pub(crate) fn main() -> ExitCode {
 
 #[cfg(target_os = "android")]
 pub(crate) fn android_main(app: gpui_platform::AndroidApp) {
+    install_android_panic_hook();
     let init_err = init_android(&app);
     gpui_platform::set_android_app(app);
     crate::logging::init();
@@ -87,6 +88,30 @@ pub(crate) fn android_main(app: gpui_platform::AndroidApp) {
     }
     let (sender, links) = tokio::sync::mpsc::unbounded_channel::<Vec<String>>();
     let _ = run_app(Vec::new(), sender, links);
+}
+
+#[cfg(target_os = "android")]
+fn install_android_panic_hook() {
+    static INSTALLED: std::sync::Once = std::sync::Once::new();
+    INSTALLED.call_once(|| {
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let msg = format!("sonora panic: {info}\0");
+            let tag = c"Sonora";
+            unsafe extern "C" {
+                fn __android_log_write(
+                    prio: std::ffi::c_int,
+                    tag: *const std::ffi::c_char,
+                    text: *const std::ffi::c_char,
+                ) -> std::ffi::c_int;
+            }
+            unsafe {
+                __android_log_write(6, tag.as_ptr(), msg.as_ptr().cast());
+            }
+            log::error!("{info}");
+            prev(info);
+        }));
+    });
 }
 
 #[cfg(target_os = "android")]
@@ -469,7 +494,7 @@ fn open_window(cx: &mut App) {
     let look = settings.look();
     let background = ui::backdrop(look.blur_window, look.transparent);
 
-    cx.open_window(
+    if let Err(error) = cx.open_window(
         WindowOptions {
             window_bounds: Some(placement),
             display_id,
@@ -510,8 +535,9 @@ fn open_window(cx: &mut App) {
             state::remember_window(window, cx);
             cx.new(|cx| Root::new(session, library, playback, queue, window, cx))
         },
-    )
-    .expect("failed to open window");
+    ) {
+        log::error!("sonora: failed to open window: {error:#}");
+    }
 }
 
 // DWM only offers two rounded presets (no arbitrary radius), so the four `Rounding` choices

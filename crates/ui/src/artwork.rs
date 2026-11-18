@@ -206,17 +206,18 @@ fn decoders() -> mpsc::Sender<Job> {
     let receiver = Arc::new(Mutex::new(receiver));
     for index in 0..DECODERS {
         let receiver = receiver.clone();
-        let started = std::thread::Builder::new()
-            .name(format!("artwork-{index}"))
-            .spawn(move || {
-                loop {
-                    let next = receiver.lock().ok().and_then(|queue| queue.recv().ok());
-                    let Some(job) = next else {
-                        return;
-                    };
-                    job();
-                }
-            });
+        let builder = std::thread::Builder::new().name(format!("artwork-{index}"));
+        #[cfg(target_os = "android")]
+        let builder = builder.stack_size(4 * 1024 * 1024);
+        let started = builder.spawn(move || {
+            loop {
+                let next = receiver.lock().ok().and_then(|queue| queue.recv().ok());
+                let Some(job) = next else {
+                    return;
+                };
+                job();
+            }
+        });
         if let Err(error) = started {
             log::warn!("artwork: cannot start a decoder: {error}");
         }

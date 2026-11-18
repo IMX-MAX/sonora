@@ -355,9 +355,9 @@ impl Paced {
             .with_input_rate(rate)
             .with_output_rate(rate)
             .with_channels(2);
-        // rodio refuses a zero rate when the output opens, so the config is always valid
+        // rodio refuses a zero rate when the output opens, so the config is normally valid
         let resampler = RealtimeResampler::new(config)
-            .expect("PRESET_GOOD at the device's non-zero rate, in stereo, is a valid config");
+            .map_err(|error| anyhow::anyhow!("cannot create resampler for rate {rate}: {error}"))?;
         let generation = cue.generation.load(Ordering::Relaxed);
         Ok(Self {
             output,

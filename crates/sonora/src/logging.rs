@@ -55,21 +55,24 @@ pub fn init() {
 /// desktop entry or a tray has no terminal to lose it to, so this is the only place a crash
 /// leaves a trace. `RUST_BACKTRACE` still decides whether there is a backtrace to write.
 fn catch_panics() {
-    let default = std::panic::take_hook();
+    static HOOKED: std::sync::Once = std::sync::Once::new();
+    HOOKED.call_once(|| {
+        let default = std::panic::take_hook();
 
-    std::panic::set_hook(Box::new(move |panic| {
-        let thread = std::thread::current();
-        let name = thread.name().unwrap_or("unnamed");
-        let backtrace = std::backtrace::Backtrace::capture();
-        match backtrace.status() {
-            std::backtrace::BacktraceStatus::Captured => {
-                log::error!("panic: {panic} on the {name} thread\n{backtrace}")
+        std::panic::set_hook(Box::new(move |panic| {
+            let thread = std::thread::current();
+            let name = thread.name().unwrap_or("unnamed");
+            let backtrace = std::backtrace::Backtrace::capture();
+            match backtrace.status() {
+                std::backtrace::BacktraceStatus::Captured => {
+                    log::error!("panic: {panic} on the {name} thread\n{backtrace}")
+                }
+                _ => log::error!("panic: {panic} on the {name} thread"),
             }
-            _ => log::error!("panic: {panic} on the {name} thread"),
-        }
-        log::logger().flush();
-        default(panic);
-    }));
+            log::logger().flush();
+            default(panic);
+        }));
+    });
 }
 
 /// The log file under the size limit: a write that would carry it past `LIMIT` rotates it
@@ -116,7 +119,10 @@ impl Log for Redacted {
             return;
         }
         let text = record.args().to_string();
-        match music::redact(&text) {
+        let redacted = music::redact(&text);
+        #[cfg(target_os = "android")]
+        logcat(record.level(), record.target(), &redacted);
+        match redacted {
             Cow::Borrowed(_) => self.0.log(record),
             Cow::Owned(clean) => self.0.log(
                 &Record::builder()
@@ -203,6 +209,28 @@ fn trim(path: &Path) {
 
 fn append(path: &Path) -> Option<File> {
     OpenOptions::new().create(true).append(true).open(path).ok()
+}
+
+#[cfg(target_os = "android")]
+fn logcat(level: log::Level, target: &str, message: &str) {
+    let prio = match level {
+        log::Level::Error => 6,
+        log::Level::Warn => 5,
+        log::Level::Info => 4,
+        log::Level::Debug => 3,
+        log::Level::Trace => 2,
+    };
+    let line = format!("[{target}] {message}\0");
+    unsafe extern "C" {
+        fn __android_log_write(
+            prio: std::ffi::c_int,
+            tag: *const std::ffi::c_char,
+            text: *const std::ffi::c_char,
+        ) -> std::ffi::c_int;
+    }
+    unsafe {
+        __android_log_write(prio, c"Sonora".as_ptr(), line.as_ptr().cast());
+    }
 }
 
 /// Moves the file to `PREVIOUS`, dropping what was there, so however much is written the
