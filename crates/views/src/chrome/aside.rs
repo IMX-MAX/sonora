@@ -155,6 +155,7 @@ pub(crate) struct VerseLook {
     pub(crate) lane: Pixels,
     pub(crate) karaoke: bool,
     pub(crate) scripts: Option<RomanizationScripts>,
+    pub(crate) translated: bool,
     /// How far out of focus the verse sits, from 0 for sharp to 1 at the sheet's edge.
     pub(crate) haze: f32,
 }
@@ -194,6 +195,7 @@ struct SheetLayout {
     verse: Pixels,
     lane: Pixels,
     scripts: Option<RomanizationScripts>,
+    translated: bool,
     rem: Pixels,
     scale: f32,
     font: u64,
@@ -1079,13 +1081,14 @@ impl Aside {
         let following = (self.verse_of.as_deref() != lyrics.following())
             .then(|| lyrics.following().map(str::to_owned));
         let take = lyrics.revision();
-        let (karaoke_lyrics, romanization_scripts) = {
+        let (karaoke_lyrics, romanization_scripts, translated_lyrics) = {
             let settings = self.settings.read(cx);
             (
                 settings.karaoke_lyrics(),
                 settings
                     .romanized_lyrics()
                     .then(|| settings.romanization_scripts()),
+                settings.translated_lyrics(),
             )
         };
         let karaoke_effects = karaoke_lyrics && effects();
@@ -1193,6 +1196,7 @@ impl Aside {
             verse,
             lane: lane_size,
             scripts: romanization_scripts,
+            translated: translated_lyrics,
             rem: window.rem_size(),
             scale: window.scale_factor(),
             font: font_key(self.settings.read(cx).font()),
@@ -1528,6 +1532,12 @@ impl Aside {
                             selected_romanization(&line.romanized, romanization_scripts),
                             |this, text| this.child(romanized_lyrics_lane(text, lane_size, &theme)),
                         )
+                        .when_some(
+                            line.translation.as_ref().filter(|_| translated_lyrics),
+                            |this, text| {
+                                this.child(romanized_lyrics_lane(text.clone(), lane_size, &theme))
+                            },
+                        )
                         .children(lanes)
                         .when(depth > 0., |this| {
                             this.layer_scale(1. - (1. - PRESSED) * depth)
@@ -1544,9 +1554,15 @@ impl Aside {
                     let traded = index
                         .checked_sub(1)
                         .is_some_and(|previous| lines[previous].voice != line.voice);
-                    // the romanization and the backing vocals under a line are read after it
+                    // the romanization, translation, and backing vocals under a line are read after it
                     let lanes_spoken = selected_romanization(&line.romanized, romanization_scripts)
                         .into_iter()
+                        .chain(
+                            line.translation
+                                .as_ref()
+                                .filter(|_| translated_lyrics)
+                                .cloned(),
+                        )
                         .chain(line.secondary.iter().map(|lane| lane.text.clone()))
                         .filter(|text| !text.is_empty())
                         .collect::<Vec<_>>()
@@ -2344,6 +2360,10 @@ pub(crate) fn verse(
                 .when_some(
                     selected_romanization(&line.romanized, look.scripts),
                     |this, text| this.child(romanized_lyrics_lane(text, look.lane, theme)),
+                )
+                .when_some(
+                    line.translation.as_ref().filter(|_| look.translated),
+                    |this, text| this.child(romanized_lyrics_lane(text.clone(), look.lane, theme)),
                 ),
         )
         .when(haze > 0., |this| this.opacity(1. - VEIL * haze))

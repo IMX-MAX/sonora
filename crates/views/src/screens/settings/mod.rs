@@ -95,6 +95,7 @@ enum Slot {
     Karaoke,
     BlurLyrics,
     Romanized,
+    TranslatedLyrics,
     PanelLyricsSize,
     FullscreenLyricsSize,
     LyricsSources,
@@ -970,6 +971,10 @@ impl SettingsView {
                 t!("settings-romanized-lyrics"),
                 t!("settings-romanized-lyrics-detail"),
             ),
+            Slot::TranslatedLyrics => (
+                t!("settings-translated-lyrics"),
+                t!("settings-translated-lyrics-detail"),
+            ),
             Slot::LyricsForLocal => (
                 t!("settings-lyrics-for-local-files"),
                 t!("settings-lyrics-for-local-files-detail"),
@@ -1131,6 +1136,7 @@ impl SettingsView {
             Slot::Lyrics => self.lyrics_row(cx),
             Slot::Karaoke => self.karaoke_lyrics_row(cx),
             Slot::Romanized => self.romanized_lyrics_row(cx),
+            Slot::TranslatedLyrics => self.translated_lyrics_row(cx),
             Slot::LyricsForLocal => self.lyrics_for_local_files_row(cx),
             Slot::SpotifyConnect => self.spotify_connect_row(cx),
             Slot::SpotifyConnectName => self.spotify_connect_name_row(cx),

@@ -36,6 +36,7 @@ impl SettingsView {
                 Slot::Karaoke,
                 Slot::BlurLyrics,
                 Slot::Romanized,
+                Slot::TranslatedLyrics,
                 Slot::PanelLyricsSize,
                 Slot::FullscreenLyricsSize,
             ]),
@@ -440,6 +441,21 @@ impl SettingsView {
 
         self.row(t!("settings-romanized-lyrics"), action.into_any_element())
     }
+
+    pub(super) fn translated_lyrics_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let on = self.settings.read(cx).translated_lyrics();
+
+        self.row(
+            t!("settings-translated-lyrics"),
+            Switch::new("translated-lyrics", on)
+                .name(t!("settings-translated-lyrics"))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_translated_lyrics(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
 }
 
 pub(super) fn romanization_script_copy(
@@ -471,6 +487,7 @@ pub(super) fn source_name(provider: &str) -> SharedString {
         "Spotify" => "settings-lyrics-provider-spotify",
         "YouTube Music" => "settings-lyrics-provider-youtube",
         "Apple Music" => "settings-lyrics-provider-apple-music",
+        "AMLL" => "settings-lyrics-provider-amll",
         "Musixmatch" => "settings-lyrics-provider-musixmatch",
         "LrcLib" => "settings-lyrics-provider-lrclib",
         "Kugou" => "settings-lyrics-provider-kugou",

@@ -353,13 +353,14 @@ const DEFAULT_STARTUP: &str = "home";
 pub const SYSTEM_FONT: &str = "auto";
 /// Every lyrics source Sonora knows by the name its provider reports, in the order a fresh
 /// install prefers them.
-pub const LYRICS_SOURCES: [&str; 10] = [
+pub const LYRICS_SOURCES: [&str; 11] = [
     LOCAL,
     "Subsonic",
     "Jellyfin",
     "Spotify",
     "YouTube Music",
     "Apple Music",
+    "AMLL",
     "Musixmatch",
     "LrcLib",
     "Kugou",
@@ -489,6 +490,7 @@ struct Values {
     karaoke_lyrics: bool,
     blur_lyrics: bool,
     romanized_lyrics: bool,
+    translated_lyrics: bool,
     panel_lyrics_scale: f32,
     fullscreen_lyrics_scale: f32,
     romanization_scripts: RomanizationScripts,
@@ -752,7 +754,7 @@ impl Default for Values {
             lyrics_enabled: true,
             lyrics_provider_priority: lyrics_priority(&[]),
             // Kugou and NetEase, the last two, start switched off.
-            lyrics_providers: LYRICS_SOURCES[..8]
+            lyrics_providers: LYRICS_SOURCES[..LYRICS_SOURCES.len() - 2]
                 .iter()
                 .map(|name| name.to_string())
                 .collect(),
@@ -760,6 +762,7 @@ impl Default for Values {
             karaoke_lyrics: true,
             blur_lyrics: true,
             romanized_lyrics: true,
+            translated_lyrics: true,
             panel_lyrics_scale: DEFAULT_LYRICS_SCALE,
             fullscreen_lyrics_scale: DEFAULT_LYRICS_SCALE,
             romanization_scripts: RomanizationScripts::default(),
@@ -1299,6 +1302,10 @@ impl AppSettings {
 
     pub fn romanized_lyrics(&self) -> bool {
         self.values.romanized_lyrics
+    }
+
+    pub fn translated_lyrics(&self) -> bool {
+        self.values.translated_lyrics
     }
 
     pub fn panel_lyrics_scale(&self) -> f32 {
@@ -1945,6 +1952,11 @@ impl AppSettings {
 
     pub fn set_romanized_lyrics(&mut self, romanized: bool, cx: &mut Context<Self>) {
         self.values.romanized_lyrics = romanized;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_translated_lyrics(&mut self, translated: bool, cx: &mut Context<Self>) {
+        self.values.translated_lyrics = translated;
         self.schedule_save(cx);
     }
 
@@ -3470,6 +3482,7 @@ mod tests {
                 "Spotify",
                 "YouTube Music",
                 "Apple Music",
+                "AMLL",
                 "Musixmatch",
                 "LrcLib",
                 "Kugou",
@@ -3496,7 +3509,7 @@ mod tests {
     fn lyrics_priority_ignores_unknown_and_duplicate_sources_and_appends_missing_ones() {
         let order = lyrics_priority(&["LrcLib".into(), "unknown".into(), "LrcLib".into()]);
         assert_eq!(order[0], "LrcLib");
-        assert_eq!(order.len(), 10);
+        assert_eq!(order.len(), 11);
         assert!(!order.iter().any(|name| name == "unknown"));
         assert_eq!(order.iter().filter(|name| *name == "LrcLib").count(), 1);
     }
