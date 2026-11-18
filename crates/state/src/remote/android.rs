@@ -43,7 +43,10 @@ impl Controls {
             ),
             None => ("", "", "", 0),
         };
-        let cover_path = cover.unwrap_or("");
+        let cover_path = cover
+            .unwrap_or("")
+            .strip_prefix("file://")
+            .unwrap_or_else(|| cover.unwrap_or(""));
         with_activity(|env, cls| {
             let jtitle = env.new_string(title)?;
             let jartist = env.new_string(artist)?;
@@ -161,7 +164,7 @@ where
         let cls = env.get_object_class(&activity)?;
         call(env, &cls)
     }) {
-        log::debug!("remote: android jni call failed: {error}");
+        log::warn!("remote: android jni call failed: {error}");
     }
 }
 

@@ -187,6 +187,9 @@ impl<T: StatefulInteractiveElement> Pinnable for T {
 }
 
 fn haul<T: StatefulInteractiveElement>(element: T, dragged: DraggedPin) -> T {
+    if cfg!(target_os = "android") {
+        return element;
+    }
     element.on_drag(dragged, |dragged, position, _, cx| {
         cx.new(|_| dragged.clone().at(position))
     })

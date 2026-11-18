@@ -340,10 +340,12 @@ impl SettingsView {
             )
             .child(div().flex_1().min_w_0().truncate().child(name))
             .children(switch)
-            .on_drag(dragged, |dragged, position, _, cx| {
-                cx.new(|_| DraggedSource {
-                    position,
-                    ..dragged.clone()
+            .when(cfg!(not(target_os = "android")), |this| {
+                this.on_drag(dragged, |dragged, position, _, cx| {
+                    cx.new(|_| DraggedSource {
+                        position,
+                        ..dragged.clone()
+                    })
                 })
             })
             .on_drag_move(

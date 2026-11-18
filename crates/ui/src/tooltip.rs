@@ -226,6 +226,9 @@ fn attach<E>(element: E, text: SharedString, raw: bool, clip: Option<TextLayout>
 where
     E: StatefulInteractiveElement + ParentElement,
 {
+    if cfg!(target_os = "android") {
+        return element;
+    }
     let hidden = move |text: &str| clip.as_ref().is_some_and(|layout| layout.text() == text);
     match perch {
         Perch::Follow => element

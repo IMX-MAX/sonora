@@ -186,15 +186,17 @@ fn grip(
             let width = snapped(dragged.clamp(min, max), window);
             resize(&width, window, cx);
         })
-        .on_drag(
-            Grab {
-                panel: key,
-                width,
-                origin: Cell::new(Pixels::ZERO),
-            },
-            |grab, _, window, cx| {
-                grab.origin.set(window.mouse_position().x);
-                cx.new(|_| Empty)
-            },
-        )
+        .when(cfg!(not(target_os = "android")), |this| {
+            this.on_drag(
+                Grab {
+                    panel: key,
+                    width,
+                    origin: Cell::new(Pixels::ZERO),
+                },
+                |grab, _, window, cx| {
+                    grab.origin.set(window.mouse_position().x);
+                    cx.new(|_| Empty)
+                },
+            )
+        })
 }

@@ -1356,14 +1356,19 @@ impl<S: TableSource> TableState<S> {
                                     this.move_column(&moved, event.event.position.x, cx);
                                 },
                             ))
-                            .on_drag(
-                                ColumnMove {
-                                    column: ix,
-                                    origin: StdCell::new(Pixels::ZERO),
-                                },
-                                |moved, _, window, cx| {
-                                    moved.origin.set(window.mouse_position().x);
-                                    cx.new(|_| Empty)
+                            .when(
+                                cfg!(not(target_os = "android")),
+                                |this| {
+                                    this.on_drag(
+                                        ColumnMove {
+                                            column: ix,
+                                            origin: StdCell::new(Pixels::ZERO),
+                                        },
+                                        |moved, _, window, cx| {
+                                            moved.origin.set(window.mouse_position().x);
+                                            cx.new(|_| Empty)
+                                        },
+                                    )
                                 },
                             )
                         })
@@ -1606,16 +1611,18 @@ fn resize_handle<S: TableSource>(
                 this.resize(&resize, event.event.position.x, cx);
             },
         ))
-        .on_drag(
-            ColumnResize {
-                column: ix,
-                origin: StdCell::new(Pixels::ZERO),
-            },
-            |resize, _, window, cx| {
-                resize.origin.set(window.mouse_position().x);
-                cx.new(|_| Empty)
-            },
-        )
+        .when(cfg!(not(target_os = "android")), |this| {
+            this.on_drag(
+                ColumnResize {
+                    column: ix,
+                    origin: StdCell::new(Pixels::ZERO),
+                },
+                |resize, _, window, cx| {
+                    resize.origin.set(window.mouse_position().x);
+                    cx.new(|_| Empty)
+                },
+            )
+        })
 }
 
 fn unpinned(corners: Corners<Pixels>, pinned: Pixels) -> Corners<Pixels> {
