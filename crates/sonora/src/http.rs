@@ -46,15 +46,26 @@ impl Client {
             handle.spawn_blocking(move || with_cache(&cache, |cache| cache.sweep()));
         }
         Self {
-            inner: reqwest::Client::builder()
-                .user_agent(USER_AGENT)
-                .build()
-                .unwrap_or_default(),
+            inner: build_client(),
             handle: handle.clone(),
             user_agent: HeaderValue::from_static(USER_AGENT),
             cache,
         }
     }
+}
+
+fn build_client() -> reqwest::Client {
+    let builder = reqwest::Client::builder().user_agent(USER_AGENT);
+    #[cfg(target_os = "android")]
+    let builder = {
+        let roots =
+            rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let tls = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        builder.use_preconfigured_tls(tls)
+    };
+    builder.build().unwrap_or_default()
 }
 
 impl HttpClient for Client {

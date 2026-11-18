@@ -89,6 +89,7 @@ windows-sys = { workspace = true, features = [
 android-activity.workspace = true
 jni.workspace = true
 rustls-platform-verifier.workspace = true
+webpki-roots.workspace = true
 
 [build-dependencies]
 embed.workspace = true

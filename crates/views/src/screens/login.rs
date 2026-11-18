@@ -712,6 +712,8 @@ impl Render for LoginView {
             .time(time)
             .when_some(radius, |this, radius| this.corner_radius(radius));
 
+        let insets = window.insets().effective();
+
         div()
             .id("login")
             .relative()
@@ -730,7 +732,16 @@ impl Render for LoginView {
                     .gap_4()
                     .size_full()
                     .p(theme.metrics.pad)
-                    .pt(theme.metrics.title_bar)
+                    .pt(theme.metrics.title_bar + insets.top)
+                    .when(insets.bottom > px(0.), |this| {
+                        this.pb(theme.metrics.pad + insets.bottom)
+                    })
+                    .when(insets.left > px(0.), |this| {
+                        this.pl(theme.metrics.pad + insets.left)
+                    })
+                    .when(insets.right > px(0.), |this| {
+                        this.pr(theme.metrics.pad + insets.right)
+                    })
                     .child(card)
                     .when(asking, |this| {
                         this.child(div().flex_none().child(self.consent(cx)))

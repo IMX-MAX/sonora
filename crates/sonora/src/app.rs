@@ -79,15 +79,18 @@ pub(crate) fn main() -> ExitCode {
 
 #[cfg(target_os = "android")]
 pub(crate) fn android_main(app: gpui_platform::AndroidApp) {
-    init_android(&app);
+    let init_err = init_android(&app);
     gpui_platform::set_android_app(app);
     crate::logging::init();
+    if let Err(error) = init_err {
+        log::warn!("android: cannot initialize platform TLS verifier: {error:#}");
+    }
     let (sender, links) = tokio::sync::mpsc::unbounded_channel::<Vec<String>>();
     let _ = run_app(Vec::new(), sender, links);
 }
 
 #[cfg(target_os = "android")]
-fn init_android(app: &gpui_platform::AndroidApp) {
+fn init_android(app: &gpui_platform::AndroidApp) -> anyhow::Result<()> {
     if let Some(base) = app.internal_data_path() {
         let data = base.join("data");
         let cache = base.join("cache");
@@ -105,12 +108,13 @@ fn init_android(app: &gpui_platform::AndroidApp) {
     unsafe {
         let vm = jni::JavaVM::from_raw(app.vm_as_ptr().cast());
         let activity_ptr = app.activity_as_ptr() as jni::sys::jobject;
-        let _ = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+        vm.attach_current_thread(|env| -> jni::errors::Result<()> {
             let context = jni::objects::JObject::from_raw(env, activity_ptr);
             rustls_platform_verifier::android::init_with_env(env, context)?;
             Ok(())
-        });
+        })?;
     }
+    Ok(())
 }
 
 fn run_app(

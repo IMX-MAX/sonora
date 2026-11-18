@@ -161,6 +161,18 @@ pub(crate) fn transport(playback: &Entity<Playback>, big: bool, cx: &App) -> imp
         .child(repeat(playback, frosted, cx))
 }
 
+/// A compact transport group for narrow stacked bars, keeping previous, play/pause and next.
+pub(crate) fn compact_transport(playback: &Entity<Playback>, cx: &App) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_1()
+        .child(previous(playback, false, cx))
+        .child(toggle(playback, false, false, cx))
+        .child(next(playback, false, cx))
+}
+
 pub(crate) fn toggle(playback: &Entity<Playback>, big: bool, frosted: bool, cx: &App) -> Button {
     let held = playback.read(cx);
     let steered = steered(cx);

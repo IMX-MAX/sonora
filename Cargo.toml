@@ -220,6 +220,7 @@ opensubsonic = "0.7"
 jni = "0.22"
 rquickjs-sys = { version = "0.12.2", features = ["bindgen"] }
 rustls-platform-verifier = "0.7"
+webpki-roots = "1"
 tokio = { version = "1.54", features = [
     "rt-multi-thread",
     "net",

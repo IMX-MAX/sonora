@@ -1296,6 +1296,7 @@ impl Render for Root {
             RootView::Workspace => self.shells.workspace.clone().into_any_element(),
             RootView::Fullscreen => self.shells.fullscreen.clone().into_any_element(),
         };
+        let insets = window.insets().effective();
         // How far above the bottom of the window the toasts hang.
         let floor = match self.view {
             RootView::Workspace => PlayerBar::height(window, cx),
@@ -1375,6 +1376,12 @@ impl Render for Root {
             .font(self.font(cx))
             .flex_col()
             .size_full()
+            .when(insets.left > gpui::Pixels::ZERO, |this| {
+                this.pl(insets.left)
+            })
+            .when(insets.right > gpui::Pixels::ZERO, |this| {
+                this.pr(insets.right)
+            })
             .when_some(radius, |this, radius| {
                 this.rounded(radius).overflow_hidden()
             })
@@ -1448,6 +1455,9 @@ impl Render for Root {
             .when(show_sign_in, |this| {
                 this.child(div().absolute().inset_0().child(self.login.clone()))
             })
+            .when(insets.top > gpui::Pixels::ZERO, |this| {
+                this.child(div().w_full().h(insets.top).flex_none())
+            })
             // The bar only changes when it is told to, so a frame drawn for the lyrics or the
             // progress bar replays it rather than building it again.
             .child(
@@ -1458,7 +1468,11 @@ impl Render for Root {
                         .flex_none(),
                 ),
             )
-            .when(!show_sign_in, |this| this.child(shell));
+            .when(!show_sign_in, |this| this.child(shell))
+            .when(
+                !show_sign_in && insets.bottom > gpui::Pixels::ZERO,
+                |this| this.child(div().w_full().h(insets.bottom).flex_none()),
+            );
         // A closed menu or dialog fades out here, over everything else in the window.
         let root = root.child(ui::lingers());
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]

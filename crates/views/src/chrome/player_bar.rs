@@ -24,7 +24,8 @@ use crate::chrome::{Chrome, SidebarRight};
 use crate::shared::menus::ItemMenu;
 use crate::shared::pins::Pinned as _;
 use crate::shared::transport::{
-    COVER_FLIGHT, CoverAway, ShellSwap, like, moved, percent, transport, volume_icon,
+    COVER_FLIGHT, CoverAway, ShellSwap, compact_transport, like, moved, percent, transport,
+    volume_icon,
 };
 use crate::shared::volume::{RisingVolume, VolumeHost, rising_volume, turn_volume};
 
@@ -619,7 +620,10 @@ impl Render for PlayerBar {
             .w_full()
             .h(height)
             .flex_none()
-            .px_5()
+            .map(|this| match stacked && !span.fits(Room::Roomy) {
+                true => this.px_3(),
+                false => this.px_5(),
+            })
             .when(stacked, |this| this.py_2())
             .when_some(radius, |this, radius| this.rounded_b(radius))
             .when_else(
@@ -641,6 +645,7 @@ impl Render for PlayerBar {
             ))
         });
 
+        let compact_bar = stacked && !span.fits(Room::Roomy);
         let content = match (stacked, layout) {
             (true, _) => base
                 .flex_col()
@@ -652,8 +657,11 @@ impl Render for PlayerBar {
                         .items_center()
                         .gap_2()
                         .w_full()
-                        .child(self.now_playing(show_track, window, cx))
-                        .child(transport(&self.playback, false, cx)),
+                        .child(self.now_playing(show_track || compact_bar, window, cx))
+                        .map(|this| match compact_bar {
+                            true => this.child(compact_transport(&self.playback, cx)),
+                            false => this.child(transport(&self.playback, false, cx)),
+                        }),
                 )
                 .child(
                     div()
@@ -663,7 +671,13 @@ impl Render for PlayerBar {
                         .w_full()
                         .child(div().flex_1().min_w_0().child(seek))
                         .child(buttons)
-                        .child(self.sound(Volume::Slider(Self::volume_width(window)), cx))
+                        .child(self.sound(
+                            match compact_bar {
+                                true => Volume::Rising,
+                                false => Volume::Slider(Self::volume_width(window)),
+                            },
+                            cx,
+                        ))
                         .child(self.fullscreen_button(cx)),
                 ),
             (false, PlayerBarLayout::Centered) => base

@@ -26,5 +26,5 @@ mod tray {
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "Rust" fn android_main(app: gpui_platform::AndroidApp) {
-    app::android_main(app);
+    crate::app::android_main(app);
 }
