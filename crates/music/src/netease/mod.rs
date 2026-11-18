@@ -95,7 +95,9 @@ struct Named {
 #[derive(Deserialize)]
 struct Sheet {
     lrc: Option<Verse>,
+    tlyric: Option<Verse>,
     yrc: Option<Verse>,
+    ytlrc: Option<Verse>,
     #[serde(default, rename = "pureMusic")]
     pure_music: bool,
 }
@@ -175,14 +177,26 @@ fn hit(song: &Song, sheet: &Sheet) -> Option<LyricsHit> {
             .and_then(|verse| verse.lyric.clone())
             .filter(|text| !text.trim().is_empty())
     };
-    let lines = lyric(&sheet.yrc)
+    let (lines, translation, tolerance) = match lyric(&sheet.yrc)
         .map(|yrc| parse_yrc(&yrc))
         .filter(|lines| !lines.is_empty())
-        .or_else(|| {
+    {
+        Some(lines) => match lyric(&sheet.ytlrc) {
+            Some(ytlrc) => (Some(lines), Some(ytlrc), Duration::from_millis(250)),
+            None => (
+                Some(lines),
+                lyric(&sheet.tlyric),
+                Duration::from_millis(600),
+            ),
+        },
+        None => (
             lyric(&sheet.lrc)
                 .map(|text| lrc::parse(&text))
-                .filter(|lines| !lines.is_empty())
-        });
+                .filter(|lines| !lines.is_empty()),
+            lyric(&sheet.tlyric),
+            Duration::from_millis(250),
+        ),
+    };
     let quiet = sheet.pure_music
         || lines
             .as_deref()
@@ -197,6 +211,9 @@ fn hit(song: &Song, sheet: &Sheet) -> Option<LyricsHit> {
                 .collect();
             if !crate::lyrics::sheet::headed(&mut lines, &song.name, &artists) {
                 return None;
+            }
+            if let Some(translation) = translation {
+                attach_translations(&mut lines, &translation, tolerance);
             }
             Lyrics::Synced {
                 lines: lines.into(),
@@ -314,9 +331,96 @@ fn read_yrc(line: &str) -> Option<LyricsLine> {
         words: (!words.is_empty()).then_some(words),
         text,
         romanized: None,
+        translation: None,
         secondary: Vec::new(),
         voice: Voice::Lead,
     })
+}
+
+fn attach_translations(lines: &mut [LyricsLine], raw: &str, tolerance: Duration) {
+    let entries = parse_translations(raw);
+    if entries.is_empty() || lines.is_empty() {
+        return;
+    }
+
+    let mut pairs: Vec<(u128, usize, usize)> = Vec::new();
+    for (line_idx, line) in lines.iter().enumerate() {
+        for (trans_idx, (stamp, _)) in entries.iter().enumerate() {
+            let diff = line.start.abs_diff(*stamp);
+            if diff <= tolerance {
+                pairs.push((diff.as_millis(), line_idx, trans_idx));
+            }
+        }
+    }
+    pairs.sort_unstable();
+
+    let mut line_used = vec![false; lines.len()];
+    let mut trans_used = vec![false; entries.len()];
+    for (_, line_idx, trans_idx) in pairs {
+        if line_used[line_idx] || trans_used[trans_idx] {
+            continue;
+        }
+        line_used[line_idx] = true;
+        trans_used[trans_idx] = true;
+        lines[line_idx].translation = Some(entries[trans_idx].1.clone());
+    }
+}
+
+fn parse_translations(raw: &str) -> Vec<(Duration, String)> {
+    let mut shift = 0i64;
+    let mut entries = Vec::new();
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('{') {
+            continue;
+        }
+        if let Some(ms) = offset_of(trimmed) {
+            shift += ms;
+            continue;
+        }
+        let mut rest = trimmed;
+        let mut stamps = Vec::new();
+        while let Some(body) = rest.strip_prefix('[') {
+            let Some((stamp, tail)) = body.split_once(']') else {
+                break;
+            };
+            let Some(at) = lrc::stamp_of(stamp) else {
+                break;
+            };
+            stamps.push(at);
+            rest = tail.trim_start();
+        }
+        let text = rest.trim();
+        if stamps.is_empty() || text.is_empty() || text == "//" {
+            continue;
+        }
+        for stamp in stamps {
+            let at = shift_stamp(stamp, -shift);
+            entries.push((at, text.to_owned()));
+        }
+    }
+    entries
+}
+
+fn offset_of(line: &str) -> Option<i64> {
+    let rest = line.strip_prefix('[')?;
+    let (tag, tail) = rest.split_once(']')?;
+    if !tail.trim().is_empty() {
+        return None;
+    }
+    let (name, value) = tag.split_once(':')?;
+    if !name.trim().eq_ignore_ascii_case("offset") {
+        return None;
+    }
+    value.trim().parse().ok()
+}
+
+fn shift_stamp(at: Duration, ms: i64) -> Duration {
+    match ms >= 0 {
+        true => at.saturating_add(Duration::from_millis(ms as u64)),
+        false => at.saturating_sub(Duration::from_millis(ms.unsigned_abs())),
+    }
 }
 
 fn grow(words: &mut [LyricsWord], text: &mut String, tail: &str) {
@@ -408,5 +512,45 @@ mod tests {
         let picked = shortlist(songs, Duration::from_secs(263));
         let ids: Vec<u64> = picked.iter().map(|song| song.id).collect();
         assert_eq!(ids, vec![2, 3, 5]);
+    }
+
+    #[test]
+    fn yrc_attaches_ytlrc_chinese_translations() {
+        let song = Song {
+            id: 1,
+            name: "Blinding Lights".to_owned(),
+            duration: 200_000,
+            artists: vec![Named {
+                name: Some("The Weeknd".to_owned()),
+            }],
+            album: None,
+        };
+        let sheet = Sheet {
+            lrc: None,
+            tlyric: None,
+            yrc: Some(Verse {
+                lyric: Some(
+                    "[27360,1290](27360,240,0)I've (27600,90,0)been (27690,360,0)tryna (28050,600,0)call\n[30150,2610](30150,240,0)I've (30390,210,0)been (30600,120,0)on (30720,240,0)my (30960,210,0)own\n"
+                        .to_owned(),
+                ),
+            }),
+            ytlrc: Some(Verse {
+                lyric: Some(
+                    "[00:27.360]我一直在寻找你\n[00:30.150]我已独自一人太久太久\n".to_owned(),
+                ),
+            }),
+            pure_music: false,
+        };
+
+        let found = hit(&song, &sheet).expect("yrc hit");
+        let Lyrics::Synced { lines } = found.lyrics else {
+            unreachable!("expected synced lyrics");
+        };
+        assert!(lines[0].words.is_some());
+        assert_eq!(lines[0].translation.as_deref(), Some("我一直在寻找你"));
+        assert_eq!(
+            lines[1].translation.as_deref(),
+            Some("我已独自一人太久太久")
+        );
     }
 }

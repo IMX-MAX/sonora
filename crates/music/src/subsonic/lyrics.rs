@@ -155,6 +155,7 @@ fn sheet(entry: StructuredLyrics) -> Option<Lyrics> {
                             end: None,
                             text: line.value.trim().to_owned(),
                             romanized: None,
+                            translation: None,
                             words: None,
                             secondary: Vec::new(),
                             voice: Voice::Lead,
@@ -171,6 +172,7 @@ fn sheet(entry: StructuredLyrics) -> Option<Lyrics> {
                             .to_owned(),
                         end: group[0].end.map(|end| shifted(end, offset)),
                         romanized: None,
+                        translation: None,
                         voice: get_agent(
                             agents.map_or(&[], Vec::as_slice),
                             group[0].agent_id.as_deref(),
@@ -193,6 +195,7 @@ fn sheet(entry: StructuredLyrics) -> Option<Lyrics> {
                         end: None,
                         text: line.value.trim().to_owned(),
                         romanized: None,
+                        translation: None,
                         words: None,
                         secondary: Vec::new(),
                         voice: Voice::Lead,

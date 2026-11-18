@@ -101,10 +101,37 @@ fn line(paragraph: Node, lead: Option<&str>, singers: &HashMap<&str, bool>) -> O
         end: end.map(|end| end.max(start)),
         text,
         romanized: None,
+        translation: translation(paragraph),
         words: (!words.is_empty()).then_some(words),
         secondary,
         voice: voice(paragraph, lead, singers),
     })
+}
+
+fn translation(paragraph: Node) -> Option<String> {
+    let mut candidates = paragraph
+        .children()
+        .filter(|node| node.is_element() && role(*node) == Some(ASIDES[0]))
+        .filter_map(|node| {
+            let text: String = node
+                .descendants()
+                .filter(Node::is_text)
+                .filter_map(|node| node.text())
+                .collect();
+            let text = text.trim().to_owned();
+            (!text.is_empty()).then(|| (node.attribute((XML, "lang")), text))
+        })
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return None;
+    }
+    if let Some(pos) = candidates
+        .iter()
+        .position(|(lang, _)| lang.is_some_and(|lang| lang.starts_with("zh")))
+    {
+        return Some(candidates.swap_remove(pos).1);
+    }
+    Some(candidates.swap_remove(0).1)
 }
 
 fn voice(paragraph: Node, lead: Option<&str>, singers: &HashMap<&str, bool>) -> Voice {

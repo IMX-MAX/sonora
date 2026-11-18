@@ -479,6 +479,7 @@ pub fn synced(answer: &LyricsAnswer) -> Option<Vec<LyricsLine>> {
                     end: None,
                     text: line.text.trim().to_owned(),
                     romanized: None,
+                    translation: None,
                     words: (!words.is_empty()).then_some(words),
                     secondary: Vec::new(),
                     voice: Voice::Lead,

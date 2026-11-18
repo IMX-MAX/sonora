@@ -246,6 +246,7 @@ fn line(start: Duration, text: String, words: Option<Vec<LyricsWord>>) -> Lyrics
         end: None,
         text,
         romanized: None,
+        translation: None,
         words,
         secondary: Vec::new(),
         voice: Voice::Lead,

@@ -105,7 +105,7 @@ fn layered(lyrics: &Lyrics) -> bool {
     };
     lines
         .iter()
-        .any(|line| !line.secondary.is_empty() || !line.voice.lead())
+        .any(|line| !line.secondary.is_empty() || !line.voice.lead() || line.translation.is_some())
 }
 
 pub fn eligible(query: &LyricsQuery, hit: &LyricsHit) -> bool {
@@ -361,6 +361,7 @@ mod tests {
             end: Some(Duration::from_secs(end)),
             text: text.to_owned(),
             romanized: None,
+            translation: None,
             words: None,
             secondary: Vec::new(),
             voice: Voice::Lead,

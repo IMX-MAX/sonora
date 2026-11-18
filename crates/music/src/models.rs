@@ -518,6 +518,8 @@ pub struct LyricsLine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub romanized: Option<RomanizedText>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub words: Option<Vec<LyricsWord>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secondary: Vec<LyricsLane>,
