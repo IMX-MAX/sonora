@@ -182,9 +182,11 @@ pub fn start<F: Fetch>(
     let name = fetch.name();
     let shelf = fetch.shelf().cloned();
     let offline = fetch.plays_offline();
-    let spawned = std::thread::Builder::new()
-        .name(format!("{name}-playback"))
-        .spawn(move || run(Arc::new(fetch), config, command_rx, events, engine_spectrum));
+    let builder = std::thread::Builder::new().name(format!("{name}-playback"));
+    #[cfg(target_os = "android")]
+    let builder = builder.stack_size(4 * 1024 * 1024);
+    let spawned =
+        builder.spawn(move || run(Arc::new(fetch), config, command_rx, events, engine_spectrum));
     if let Err(error) = spawned {
         log::error!("playback: cannot spawn the {name} engine thread: {error}");
     }
@@ -496,23 +498,24 @@ async fn engine_loop<F: Fetch>(
     let audio_fetch = fetch.clone();
     let interval = config.position_interval;
     let normalisation = config.normalisation;
-    let spawned = std::thread::Builder::new()
-        .name(format!("{}-audio", fetch.name()))
-        .spawn(move || {
-            crate::output::raise_decoder_priority();
-            audio_loop(
-                audio_fetch,
-                job_rx,
-                audio_cue,
-                chain,
-                changed,
-                joins,
-                audio_events,
-                interval,
-                normalisation,
-                heard_audio,
-            )
-        });
+    let builder = std::thread::Builder::new().name(format!("{}-audio", fetch.name()));
+    #[cfg(target_os = "android")]
+    let builder = builder.stack_size(4 * 1024 * 1024);
+    let spawned = builder.spawn(move || {
+        crate::output::raise_decoder_priority();
+        audio_loop(
+            audio_fetch,
+            job_rx,
+            audio_cue,
+            chain,
+            changed,
+            joins,
+            audio_events,
+            interval,
+            normalisation,
+            heard_audio,
+        )
+    });
     if let Err(error) = spawned {
         log::error!("playback: cannot spawn the audio thread: {error}");
         return;

@@ -144,7 +144,8 @@ impl RenderOnce for CookiePrompt {
             args.set("cookie", cookie.value());
         }
 
-        Modal::new("cookie-prompt", lookup(guide.title, Some(&args)))
+        let pasted = secret.clone();
+        let mut modal = Modal::new("cookie-prompt", lookup(guide.title, Some(&args)))
             .w(px(560.))
             .child(
                 Button::new("open-cookie-provider")
@@ -180,7 +181,19 @@ impl RenderOnce for CookiePrompt {
                             cancel(&(), window, cx);
                         }
                     }),
-            )
+            );
+        if cfg!(target_os = "android") {
+            modal = modal.action(
+                Button::new("paste-cookies")
+                    .outline()
+                    .icon("icons/clipboard-paste.svg")
+                    .label(t!("menu-paste"))
+                    .on_click(move |_, window, cx| {
+                        pasted.update(cx, |input, cx| input.paste_from_clipboard(window, cx));
+                    }),
+            );
+        }
+        modal
             .action(
                 Button::new("cancel-cookies")
                     .ghost()

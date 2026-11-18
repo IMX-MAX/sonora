@@ -683,6 +683,11 @@ impl Input {
         }
     }
 
+    pub fn paste_from_clipboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus(window, cx);
+        self.paste(&Paste, window, cx);
+    }
+
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         let Some(pasted) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
@@ -758,6 +763,7 @@ impl Input {
             return;
         }
         self.context_menu = None;
+        window.request_virtual_keyboard();
         self.selecting = true;
         let offset = self.offset_for(event.position);
         match (event.click_count, event.modifiers.shift) {

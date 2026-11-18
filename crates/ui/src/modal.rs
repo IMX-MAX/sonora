@@ -238,12 +238,15 @@ impl RenderOnce for Modal {
         // modal or crop it. The scrim dims the title bar with the rest of the window, and the
         // panel centres in the room under the bar.
         let chrome = snapped(theme.metrics.title_bar, window);
+        let insets = window.insets().effective();
         let viewport = window.viewport_size();
         let frame = div()
             .w(viewport.width)
             .h(viewport.height)
-            .p(theme.metrics.inset)
-            .pt(chrome + theme.metrics.inset)
+            .pt(chrome + theme.metrics.inset + insets.top)
+            .pb(theme.metrics.inset + insets.bottom)
+            .pl(theme.metrics.inset + insets.left)
+            .pr(theme.metrics.inset + insets.right)
             .flex()
             .items_center()
             .justify_center()

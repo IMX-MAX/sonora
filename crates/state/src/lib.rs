@@ -133,13 +133,16 @@ const LINGER: Duration = Duration::from_secs(2);
 
 impl Io {
     pub fn new() -> Result<Self> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+        let mut builder = tokio::runtime::Builder::new_multi_thread();
+        builder
             .worker_threads(WORKERS)
             .max_blocking_threads(BLOCKING)
             .thread_keep_alive(LINGER)
             .thread_name("sonora-io")
-            .enable_all()
-            .build()?;
+            .enable_all();
+        #[cfg(target_os = "android")]
+        builder.thread_stack_size(4 * 1024 * 1024);
+        let runtime = builder.build()?;
 
         Ok(Self(Arc::new(runtime)))
     }

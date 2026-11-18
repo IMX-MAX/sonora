@@ -525,7 +525,8 @@ impl Device {
         let rates = output_rate::rates(&device, &config);
         let (name, _) = cpal_describe(&device);
         let failed = Arc::new(AtomicBool::new(false));
-        let (stream, buffer) = open_stream(device, &id, &config, frames, &failed)?;
+        let fixed = chosen.is_some() || cfg!(not(target_os = "android"));
+        let (stream, buffer) = open_stream(device, &id, &config, frames, fixed, &failed)?;
         stream.pause();
         let buffers = buffers(&config, buffer);
         let sink = read_sink(&id);
@@ -1583,6 +1584,7 @@ fn open_stream(
     id: &str,
     config: &cpal::SupportedStreamConfig,
     frames: u32,
+    fixed: bool,
     failed: &Arc<AtomicBool>,
 ) -> Result<(MixerDeviceSink, u32)> {
     let frames = match buffer_range(config) {
@@ -1599,10 +1601,14 @@ fn open_stream(
     );
 
     let stream_failed = failed.clone();
+    let buffer_size = match fixed {
+        true => cpal::BufferSize::Fixed(frames),
+        false => cpal::BufferSize::Default,
+    };
     let builder = DeviceSinkBuilder::default()
         .with_device(device)
         .with_config(&config.config())
-        .with_buffer_size(cpal::BufferSize::Fixed(frames))
+        .with_buffer_size(buffer_size)
         .with_sample_format(config.sample_format())
         .with_error_callback(move |error| match error.kind() {
             cpal::ErrorKind::Xrun => log::debug!("output: buffer underrun"),
