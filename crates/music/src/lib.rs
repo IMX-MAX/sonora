@@ -1,8 +1,9 @@
 mod aac;
+pub mod amll;
 pub mod apple;
 pub mod artwork;
 mod audio;
-pub mod binimum;
+pub mod boidu;
 mod calendar;
 pub mod connect;
 pub mod cover;

@@ -4,14 +4,15 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, Result};
 use music::spotify::{AuthConfig, LibrespotClient, auth};
 use music::{
-    Lyrics, LyricsHit, LyricsProvider, LyricsQuery, MusicApi, Track, TrackKey, binimum, kugou,
+    Lyrics, LyricsHit, LyricsProvider, LyricsQuery, MusicApi, Track, TrackKey, amll, boidu, kugou,
     lrclib, musixmatch, netease,
 };
 
-const SOURCES: [&str; 7] = [
+const SOURCES: [&str; 8] = [
     "Spotify",
     "YouTube Music",
     "Apple Music",
+    "AMLL",
     "Musixmatch",
     "LrcLib",
     "Kugou",
@@ -41,7 +42,8 @@ fn providers() -> Vec<Arc<dyn LyricsProvider>> {
     vec![
         Arc::new(music::spotify::SpotifyLyrics::from_env()),
         Arc::new(music::youtube::YouTubeLyrics::new()),
-        Arc::new(binimum::Binimum::new()),
+        Arc::new(boidu::Boidu::new()),
+        Arc::new(amll::Amll::new()),
         Arc::new(musixmatch::Musixmatch::new()),
         Arc::new(lrclib::LrcLib::new()),
         Arc::new(kugou::Kugou::new()),

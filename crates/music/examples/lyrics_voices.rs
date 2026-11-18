@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use music::{Lyrics, LyricsProvider, LyricsQuery, Voice, binimum, musixmatch};
+use music::{Lyrics, LyricsProvider, LyricsQuery, Voice, amll, boidu, musixmatch};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -32,7 +32,8 @@ async fn main() {
         ("Zxqvortle Plimbath", "Nobody Realish", "", 123),
     ];
     let providers: Vec<Arc<dyn LyricsProvider>> = vec![
-        Arc::new(binimum::Binimum::new()),
+        Arc::new(boidu::Boidu::new()),
+        Arc::new(amll::Amll::new()),
         Arc::new(musixmatch::Musixmatch::new()),
     ];
 
