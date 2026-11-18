@@ -29,7 +29,10 @@ impl SettingsView {
         }
         cache.push(Slot::CacheUsage);
         let mut downloads = vec![Slot::OfflineMode];
-        if capabilities.downloads && capabilities.plain_downloads {
+        if cfg!(not(target_os = "android"))
+            && capabilities.downloads
+            && capabilities.plain_downloads
+        {
             downloads.push(Slot::OpenDownloads);
         }
         downloads.push(Slot::DownloadsUsage);

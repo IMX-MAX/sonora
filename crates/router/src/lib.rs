@@ -253,6 +253,28 @@ impl SettingsPage {
         Self::ALL.into_iter().find(|page| page.id() == id)
     }
 
+    /// The tab that matches this page, or all offered pages when searching settings.
+    pub fn offered() -> &'static [Self] {
+        #[cfg(target_os = "android")]
+        const OFFERED: &[SettingsPage] = &[
+            SettingsPage::Providers,
+            SettingsPage::General,
+            SettingsPage::Appearance,
+            SettingsPage::PlayerBar,
+            SettingsPage::NowPlaying,
+            SettingsPage::Lyrics,
+            SettingsPage::Playback,
+            SettingsPage::Sound,
+            SettingsPage::Storage,
+            SettingsPage::Scrobbling,
+            SettingsPage::About,
+            SettingsPage::LyricsSources,
+        ];
+        #[cfg(not(target_os = "android"))]
+        const OFFERED: &[SettingsPage] = &SettingsPage::ALL;
+        OFFERED
+    }
+
     /// The tab the page shows in. A drill-in belongs to its parent's tab.
     pub fn tab(self) -> SettingsTab {
         match self {
@@ -290,6 +312,21 @@ impl SettingsTab {
         Self::Integrations,
         Self::Keybinds,
     ];
+
+    /// The tabs shown on the current platform.
+    pub fn offered() -> &'static [Self] {
+        #[cfg(target_os = "android")]
+        const OFFERED: &[SettingsTab] = &[
+            SettingsTab::General,
+            SettingsTab::Appearance,
+            SettingsTab::Lyrics,
+            SettingsTab::Playback,
+            SettingsTab::Integrations,
+        ];
+        #[cfg(not(target_os = "android"))]
+        const OFFERED: &[SettingsTab] = &SettingsTab::ALL;
+        OFFERED
+    }
 
     pub fn id(self) -> &'static str {
         match self {
@@ -345,7 +382,10 @@ impl SettingsTab {
                 SettingsPage::Sound,
                 SettingsPage::Storage,
             ],
-            Self::Integrations => &[SettingsPage::Discord, SettingsPage::Scrobbling],
+            Self::Integrations => match cfg!(target_os = "android") {
+                true => &[SettingsPage::Scrobbling],
+                false => &[SettingsPage::Discord, SettingsPage::Scrobbling],
+            },
             Self::Keybinds => &[SettingsPage::Keybinds],
         }
     }

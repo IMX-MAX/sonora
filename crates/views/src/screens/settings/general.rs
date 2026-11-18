@@ -16,24 +16,33 @@ const ENTRIES: &str = "entries";
 
 impl SettingsView {
     pub(super) fn general_groups(&self, cx: &App) -> Vec<Group> {
-        vec![
+        let mut groups = vec![
             Group::new("settings-group-startup", "icons/house.svg").rows([
                 Slot::Startup,
                 Slot::Provider,
                 Slot::Entries,
                 Slot::Language,
             ]),
-            Group::new("settings-group-window", "icons/panel-left-open.svg")
-                .rows([Slot::Tray, Slot::TrayIcon, Slot::NowPlayingOnFileOpen])
-                .rows(self.decoration_slots(cx))
-                .rows(taskbar_slots()),
-            Group::new("settings-group-motion", "icons/loader-circle.svg").rows([
-                Slot::Motion,
-                Slot::Pace,
-                Slot::Saver,
-            ]),
+        ];
+        if cfg!(not(target_os = "android")) {
+            groups.push(
+                Group::new("settings-group-window", "icons/panel-left-open.svg")
+                    .rows([Slot::Tray, Slot::TrayIcon, Slot::NowPlayingOnFileOpen])
+                    .rows(self.decoration_slots(cx))
+                    .rows(taskbar_slots()),
+            );
+        }
+        groups.push(
+            Group::new("settings-group-motion", "icons/loader-circle.svg").rows(
+                [Slot::Motion, Slot::Pace]
+                    .into_iter()
+                    .chain(cfg!(not(target_os = "android")).then_some(Slot::Saver)),
+            ),
+        );
+        groups.push(
             Group::new("settings-group-context-menus", "icons/list.svg").rows([Slot::AdaptiveMenu]),
-        ]
+        );
+        groups
     }
 
     /// The rows about the window's own frame, which differ by platform.

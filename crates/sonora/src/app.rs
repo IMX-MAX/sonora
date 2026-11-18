@@ -116,6 +116,11 @@ fn install_android_panic_hook() {
 
 #[cfg(target_os = "android")]
 fn init_android(app: &gpui_platform::AndroidApp) -> anyhow::Result<()> {
+    if std::env::var_os("RUST_BACKTRACE").is_none() {
+        unsafe {
+            std::env::set_var("RUST_BACKTRACE", "1");
+        }
+    }
     if let Some(base) = app.internal_data_path() {
         let data = base.join("data");
         let cache = base.join("cache");

@@ -230,6 +230,17 @@ pub(super) fn outward(
     whole(id, title, value, "icons/external-link.svg", cx)
 }
 
+/// A row that copies something from Sonora to the clipboard.
+#[cfg(target_os = "android")]
+pub(super) fn copying(
+    id: impl Into<ElementId>,
+    title: SharedString,
+    value: Option<SharedString>,
+    cx: &App,
+) -> Button {
+    whole(id, title, value, "icons/copy.svg", cx)
+}
+
 /// A row that is one button from edge to edge, ending in `trailing`. Its hover reaches a little
 /// past the column on both sides, so the label still lines up with the rows around it.
 fn whole(

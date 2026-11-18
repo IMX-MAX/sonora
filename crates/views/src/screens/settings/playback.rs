@@ -37,7 +37,10 @@ impl SettingsView {
         if self.session.read(cx).provider_slug() == Some("youtube") {
             playing.push(Slot::SponsorBlock);
         }
-        playing.extend([Slot::Sleep, Slot::StayAwake]);
+        playing.push(Slot::Sleep);
+        if cfg!(not(target_os = "android")) {
+            playing.push(Slot::StayAwake);
+        }
         let mut groups = vec![Group::new("settings-group-playing", "icons/play.svg").rows(playing)];
         // one level is nothing to choose between, so it is stated in a row rather than offered
         match capabilities.qualities.len() {

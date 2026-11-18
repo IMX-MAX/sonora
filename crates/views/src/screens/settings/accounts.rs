@@ -72,13 +72,18 @@ impl SettingsView {
         // The library picker only exists once an account that can be limited to a library is
         // stored: without one there is no server to list libraries from.
         let scoped = self.session.read(cx).offers_libraries();
-        vec![
+        let mut groups = vec![
             Group::new("settings-group-services", "icons/music.svg")
                 .cards(Slot::Accounts)
                 .rows(scoped.then_some(Slot::SubsonicLibrary)),
-            Group::new("settings-group-local-files", "icons/file-music.svg")
-                .rows([Slot::LocalFolder]),
-        ]
+        ];
+        if cfg!(not(target_os = "android")) {
+            groups.push(
+                Group::new("settings-group-local-files", "icons/file-music.svg")
+                    .rows([Slot::LocalFolder]),
+            );
+        }
+        groups
     }
 
     pub(super) fn music_folders_groups(&self) -> Vec<Group> {

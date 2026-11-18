@@ -39,7 +39,8 @@ impl SettingsView {
             Group::new("settings-group-text", "icons/text-select.svg")
                 .rows([Slot::Typeface, Slot::Font]),
             Group::new("settings-group-window", "icons/panel-left-open.svg").rows(
-                [Slot::Opacity]
+                cfg!(not(target_os = "android"))
+                    .then_some(Slot::Opacity)
                     .into_iter()
                     .chain(ui::WindowBlur::supported(cx).then_some(Slot::WindowBlur))
                     .chain([Slot::Blur]),

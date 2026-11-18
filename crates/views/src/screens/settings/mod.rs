@@ -719,8 +719,9 @@ impl SettingsView {
     /// lives on. Ties keep the order of the pages. Only titles and details are read and no row
     /// is built.
     fn found(&self, cx: &App) -> Vec<(SettingsPage, Slot)> {
-        let mut hits: Vec<(u32, SettingsPage, Slot)> = SettingsPage::ALL
-            .into_iter()
+        let mut hits: Vec<(u32, SettingsPage, Slot)> = SettingsPage::offered()
+            .iter()
+            .copied()
             .flat_map(|page| {
                 self.groups(page, cx)
                     .into_iter()
@@ -1046,7 +1047,13 @@ impl SettingsView {
                 t!("settings-update-channel"),
                 t!("settings-update-channel-detail"),
             ),
-            Slot::Log => (t!("settings-log"), t!("settings-log-detail")),
+            Slot::Log => (
+                t!("settings-log"),
+                match cfg!(target_os = "android") {
+                    true => t!("settings-log-copy-detail"),
+                    false => t!("settings-log-detail"),
+                },
+            ),
             Slot::License => (t!("settings-license"), t!("settings-license-detail")),
             Slot::Source => (t!("settings-source"), t!("settings-source-detail")),
         };

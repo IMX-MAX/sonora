@@ -1507,6 +1507,8 @@ update-channel-nightly = Nightly
 settings-log = Log file
 settings-log-detail = What Sonora wrote while running. Attach it to a bug report
 settings-log-open = Open log
+settings-log-copy = Copy log
+settings-log-copy-detail = Copy recent app and crash logs to the clipboard
 
 # tags
 tags-edit-title = Edit tags
@@ -1604,6 +1606,8 @@ toast-theme-link-unreadable = That theme link is damaged or holds something othe
 toast-theme-install-failed = Cannot install { $name }
 toast-theme-delete-failed = Cannot delete { $name }
 toast-code-copied = Code copied
+toast-log-copied = Log copied
+toast-log-empty = No log recorded yet
 menu-copy-link-none = This has no link to share
 menu-copy-link-local = Local artists and playlists have no link
 toast-settings-save-failed = Settings could not be saved

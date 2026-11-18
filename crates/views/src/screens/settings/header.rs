@@ -57,15 +57,15 @@ impl Render for SettingsHeader {
         let calm = self.calm;
         // a narrow column keeps the icons and leaves the names to the tooltips
         let named = layout.room().fits(Room::Roomy);
-        let shown =
-            chosen.and_then(|chosen| SettingsTab::ALL.iter().position(|tab| *tab == chosen));
+        let tabs = SettingsTab::offered();
+        let shown = chosen.and_then(|chosen| tabs.iter().position(|tab| *tab == chosen));
 
         let tabs = TabBar::new("settings-tabs")
             .name(i18n::lookup("nav-settings", None))
             .max_w_full()
             .blurred()
             .reveal(shown)
-            .items(SettingsTab::ALL.map(|tab| {
+            .items(tabs.iter().copied().map(|tab| {
                 Button::new(tab.id())
                     .icon(tab.icon())
                     .map(|button| match named {

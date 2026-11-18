@@ -53,8 +53,10 @@ impl SettingsView {
                         .into_iter()
                         .flatten(),
                 ),
-            Group::new("settings-group-controls", "icons/sliders-horizontal.svg")
-                .rows([Slot::FullscreenControlsAutohide, Slot::OsFullscreen]),
+            Group::new("settings-group-controls", "icons/sliders-horizontal.svg").rows(
+                std::iter::once(Slot::FullscreenControlsAutohide)
+                    .chain(cfg!(not(target_os = "android")).then_some(Slot::OsFullscreen)),
+            ),
         ]
     }
 
