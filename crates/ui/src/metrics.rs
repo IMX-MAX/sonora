@@ -88,11 +88,20 @@ impl Metrics {
             row,
             header: px((row / px(1.) * HEADER).round()),
             pad: px(8.),
-            inset: px(24.),
+            inset: match cfg!(target_os = "android") {
+                true => px(14.),
+                false => px(24.),
+            },
             control: roomy(32., 2.),
-            control_small: roomy(26., 1.7),
+            control_small: match cfg!(target_os = "android") {
+                true => roomy(30., 2.0),
+                false => roomy(26., 1.7),
+            },
             field: roomy(36., 2.6),
-            title_bar: roomy(36., 2.4),
+            title_bar: match cfg!(target_os = "android") {
+                true => roomy(42., 2.6),
+                false => roomy(36., 2.4),
+            },
             player_bar: roomy(76., 5.),
             list_row: roomy(52., 3.2),
             thumb: px(34.),

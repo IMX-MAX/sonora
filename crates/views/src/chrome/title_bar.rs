@@ -170,22 +170,27 @@ impl TitleBar {
                         back.update(cx, |navigation, cx| navigation.back(cx))
                     }),
             )
-            .child(
-                Button::new("history-forward")
-                    .ghost()
-                    .icon("icons/chevron-right.svg")
-                    .tooltip("nav-forward")
-                    .disabled(!can_forward)
-                    .size_8()
-                    .px_0()
-                    .when(can_forward, |button| {
-                        button
-                            .hover(move |style| style.bg(hover))
-                            .active(move |style| style.bg(hover))
-                    })
-                    .on_click(move |_, _, cx| {
-                        forward.update(cx, |navigation, cx| navigation.forward(cx))
-                    }),
+            .when(
+                can_forward || crate::chrome::Chrome::window_room(window).fits(ui::Room::Snug),
+                |history| {
+                    history.child(
+                        Button::new("history-forward")
+                            .ghost()
+                            .icon("icons/chevron-right.svg")
+                            .tooltip("nav-forward")
+                            .disabled(!can_forward)
+                            .size_8()
+                            .px_0()
+                            .when(can_forward, |button| {
+                                button
+                                    .hover(move |style| style.bg(hover))
+                                    .active(move |style| style.bg(hover))
+                            })
+                            .on_click(move |_, _, cx| {
+                                forward.update(cx, |navigation, cx| navigation.forward(cx))
+                            }),
+                    )
+                },
             )
             .when(refreshes, |history| {
                 history.child(

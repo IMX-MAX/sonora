@@ -109,12 +109,36 @@ fn init_android(app: &gpui_platform::AndroidApp) -> anyhow::Result<()> {
         let vm = jni::JavaVM::from_raw(app.vm_as_ptr().cast());
         let activity_ptr = app.activity_as_ptr() as jni::sys::jobject;
         vm.attach_current_thread(|env| -> jni::errors::Result<()> {
-            let context = jni::objects::JObject::from_raw(env, activity_ptr);
-            rustls_platform_verifier::android::init_with_env(env, context)?;
+            let activity = jni::objects::JObject::from_raw(env, activity_ptr);
+            let app_ctx = env
+                .call_method(
+                    &activity,
+                    jni::jni_str!("getApplicationContext"),
+                    jni::jni_sig!(() -> android.content.Context),
+                    &[],
+                )
+                .and_then(|v| v.l())
+                .unwrap_or(activity);
+            rustls_platform_verifier::android::init_with_env(env, app_ctx)?;
             Ok(())
         })?;
     }
     Ok(())
+}
+
+fn shared_io() -> anyhow::Result<state::Io> {
+    #[cfg(target_os = "android")]
+    {
+        static IO: std::sync::OnceLock<state::Io> = std::sync::OnceLock::new();
+        if let Some(io) = IO.get() {
+            return Ok(io.clone());
+        }
+        let io = state::Io::new()?;
+        let _ = IO.set(io.clone());
+        return Ok(io);
+    }
+    #[cfg(not(target_os = "android"))]
+    state::Io::new()
 }
 
 fn run_app(
@@ -132,7 +156,7 @@ fn run_app(
         .install_default()
         .ok();
 
-    let io = match state::Io::new() {
+    let io = match shared_io() {
         Ok(io) => io,
         Err(error) => {
             eprintln!("sonora: cannot start runtime: {error:#}");

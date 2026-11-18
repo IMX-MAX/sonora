@@ -564,6 +564,9 @@ impl PlayerBar {
         let theme = *cx.theme();
         let layout = Sonora::global(cx).settings.read(cx).player_bar_layout();
         let height = match (Self::stacked(window, layout), layout) {
+            (true, _) if !Chrome::window_room(window).fits(Room::Roomy) => {
+                theme.metrics.player_bar + theme.metrics.pad * 4.
+            }
             (true, _) => theme.metrics.player_bar + theme.metrics.pad * 3.,
             (false, PlayerBarLayout::Compact) => theme.metrics.row + theme.metrics.pad * 2.,
             _ => theme.metrics.player_bar,
@@ -671,13 +674,15 @@ impl Render for PlayerBar {
                         .w_full()
                         .child(div().flex_1().min_w_0().child(seek))
                         .child(buttons)
-                        .child(self.sound(
-                            match compact_bar {
-                                true => Volume::Rising,
-                                false => Volume::Slider(Self::volume_width(window)),
-                            },
-                            cx,
-                        ))
+                        .when(!compact_bar || cfg!(not(target_os = "android")), |this| {
+                            this.child(self.sound(
+                                match compact_bar {
+                                    true => Volume::Rising,
+                                    false => Volume::Slider(Self::volume_width(window)),
+                                },
+                                cx,
+                            ))
+                        })
                         .child(self.fullscreen_button(cx)),
                 ),
             (false, PlayerBarLayout::Centered) => base
