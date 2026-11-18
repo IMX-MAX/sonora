@@ -1509,6 +1509,11 @@ impl<S: TableSource> TableState<S> {
                             cx.notify();
                         }),
                     )
+                    .when(cfg!(target_os = "android"), |this| {
+                        this.on_click(cx.listener(move |_, _, _, cx| {
+                            cx.emit(TableEvent::DoubleClicked(display));
+                        }))
+                    })
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(move |this, event: &MouseDownEvent, window, cx| {

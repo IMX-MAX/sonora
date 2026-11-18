@@ -134,14 +134,21 @@ fn register_natives() -> jni::errors::Result<()> {
         registered = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
             let activity = unsafe { JObject::from_raw(env, act_ptr) };
             let cls = env.get_object_class(&activity)?;
-            let method = unsafe {
-                NativeMethod::from_raw_parts(
-                    jni_str!("nativeMediaCommand"),
-                    jni_str!("(Ljava/lang/String;)V"),
-                    native_media_command as *mut c_void,
-                )
+            let methods = unsafe {
+                [
+                    NativeMethod::from_raw_parts(
+                        jni_str!("nativeMediaCommand"),
+                        jni_str!("(Ljava/lang/String;)V"),
+                        native_media_command as *mut c_void,
+                    ),
+                    NativeMethod::from_raw_parts(
+                        jni_str!("nativeMediaLog"),
+                        jni_str!("(Ljava/lang/String;)V"),
+                        native_media_log as *mut c_void,
+                    ),
+                ]
             };
-            unsafe { env.register_native_methods(&cls, &[method]) }?;
+            unsafe { env.register_native_methods(&cls, &methods) }?;
             Ok(())
         });
     });
@@ -181,6 +188,20 @@ extern "system" fn native_media_command<'local>(
             {
                 let _ = sender.send(command);
             }
+            Ok(())
+        })
+        .resolve::<jni::errors::LogErrorAndDefault>();
+}
+
+extern "system" fn native_media_log<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    msg: JString<'local>,
+) {
+    let _ = unowned_env
+        .with_env(|env| -> jni::errors::Result<()> {
+            let text = msg.try_to_string(env)?;
+            log::info!("remote: {text}");
             Ok(())
         })
         .resolve::<jni::errors::LogErrorAndDefault>();

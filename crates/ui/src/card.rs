@@ -558,8 +558,12 @@ impl RenderOnce for Card {
                         let held = ElementId::NamedChild(Arc::new(id.clone()), "play".into());
                         let cover = cover
                             .id("card-cover")
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_click(|_, _, cx| cx.stop_propagation())
+                            .when(cfg!(not(target_os = "android")) || playing, |this| {
+                                this.on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                    cx.stop_propagation()
+                                })
+                                .on_click(|_, _, cx| cx.stop_propagation())
+                            })
                             .when_some(warm, |this, warm| {
                                 this.on_hover(move |hovered, window, cx| {
                                     if *hovered {

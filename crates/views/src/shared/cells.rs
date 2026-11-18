@@ -186,6 +186,7 @@ pub(crate) fn transport<F>(cell: &Cell<F>, resting: AnyElement, hover: Transport
     } = hover;
     let enabled = press.is_some();
     let preload = preload.map(Rc::<dyn Fn(&mut App)>::from);
+    let press = press.map(Rc::<dyn Fn(&mut App)>::from);
     let hover_task = Rc::new(RefCell::new(None::<Task<()>>));
 
     cell.frame()
@@ -201,6 +202,14 @@ pub(crate) fn transport<F>(cell: &Cell<F>, resting: AnyElement, hover: Transport
                 .items_center()
                 .justify_center()
                 .size(HIT)
+                .when(cfg!(target_os = "android"), |this| {
+                    this.when_some(press.clone(), |this, press| {
+                        this.on_click(move |_, _, cx| {
+                            cx.stop_propagation();
+                            press(cx);
+                        })
+                    })
+                })
                 .when_some(preload.clone(), |this, preload| {
                     let hover_task = hover_task.clone();
                     this.on_hover(move |hovered: &bool, _, cx| {

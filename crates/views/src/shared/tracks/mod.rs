@@ -562,6 +562,7 @@ impl TrackSource {
                 })
                 .disabled(pending)
                 .on_click(move |_, _, cx| {
+                    cx.stop_propagation();
                     let Some(track) = source.tracks(cx).get(at).cloned() else {
                         return;
                     };
