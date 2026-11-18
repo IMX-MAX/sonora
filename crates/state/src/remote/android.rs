@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use gpui::App;
-use jni::objects::{JClass, JObject, JString, JValue};
+use jni::objects::{Global, JClass, JObject, JString, JValue};
 use jni::{Env, EnvUnowned, JavaVM, NativeMethod, jni_sig, jni_str};
 use music::Track;
 use tokio::sync::mpsc;
@@ -13,7 +13,9 @@ use super::Command;
 use crate::{PlaybackState, Repeat};
 
 static COMMANDS: Mutex<Option<mpsc::UnboundedSender<Command>>> = Mutex::new(None);
+static ACTIVITY_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static REGISTERED: OnceLock<()> = OnceLock::new();
+static INIT_LOCK: Mutex<()> = Mutex::new(());
 
 /// Android `MediaSession` and media notification controls bridged to `SonoraActivity` via JNI.
 pub struct Controls {
@@ -27,8 +29,9 @@ impl Controls {
         _cx: &mut App,
     ) -> Result<Self> {
         *COMMANDS.lock().unwrap_or_else(|e| e.into_inner()) = Some(commands);
-        if let Err(error) = register_natives() {
-            log::warn!("remote: cannot register Android media callback: {error:#}");
+        match register_natives() {
+            Ok(()) => log::info!("remote: android media controls attached"),
+            Err(error) => log::warn!("remote: cannot register Android media callback: {error:#}"),
         }
         Ok(Self { last_state: 0 })
     }
@@ -47,6 +50,10 @@ impl Controls {
             .unwrap_or("")
             .strip_prefix("file://")
             .unwrap_or_else(|| cover.unwrap_or(""));
+        log::debug!(
+            "remote: android describe title={title:?} cover={}",
+            !cover_path.is_empty()
+        );
         with_activity(|env, cls| {
             let jtitle = env.new_string(title)?;
             let jartist = env.new_string(artist)?;
@@ -77,6 +84,7 @@ impl Controls {
         };
         self.last_state = code;
         let pos_ms = i64::try_from(at.as_millis()).unwrap_or(0);
+        log::debug!("remote: android playback state={code} pos_ms={pos_ms}");
         with_activity(|env, cls| {
             env.call_static_method(
                 cls,
@@ -121,38 +129,82 @@ impl Controls {
     pub fn set_repeat(&mut self, _repeat: Repeat) {}
 }
 
+fn activity_class<'env>(
+    env: &mut Env<'env>,
+    app_ptr: jni::sys::jobject,
+) -> jni::errors::Result<&'static Global<JClass<'static>>> {
+    if let Some(cls) = ACTIVITY_CLASS.get() {
+        return Ok(cls);
+    }
+    let _guard = INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(cls) = ACTIVITY_CLASS.get() {
+        return Ok(cls);
+    }
+    // `ndk_context` holds the Application Context, so load `SonoraActivity` via its
+    // `ClassLoader` rather than `get_object_class` (which yields `android.app.Application`).
+    let app = std::mem::ManuallyDrop::new(unsafe { JObject::from_raw(env, app_ptr) });
+    let loader = env
+        .call_method(
+            &*app,
+            jni_str!("getClassLoader"),
+            jni_sig!(() -> java.lang.ClassLoader),
+            &[],
+        )?
+        .l()?;
+    let cls_name = env.new_string("io.github.sonorahq.sonora.SonoraActivity")?;
+    let cls_obj = env
+        .call_method(
+            &loader,
+            jni_str!("loadClass"),
+            jni_sig!((java.lang.String) -> java.lang.Class),
+            &[JValue::from(&cls_name)],
+        )?
+        .l()?;
+    let cls = env.cast_local::<JClass>(cls_obj)?;
+    let global = env.new_global_ref(cls)?;
+    let _ = ACTIVITY_CLASS.set(global);
+    Ok(ACTIVITY_CLASS.get().expect("activity class just set"))
+}
+
+fn ensure_registered(env: &mut Env<'_>, cls: &Global<JClass<'static>>) -> jni::errors::Result<()> {
+    if REGISTERED.get().is_some() {
+        return Ok(());
+    }
+    let _guard = INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if REGISTERED.get().is_some() {
+        return Ok(());
+    }
+    let methods = unsafe {
+        [
+            NativeMethod::from_raw_parts(
+                jni_str!("nativeMediaCommand"),
+                jni_str!("(Ljava/lang/String;)V"),
+                native_media_command as *mut c_void,
+            ),
+            NativeMethod::from_raw_parts(
+                jni_str!("nativeMediaLog"),
+                jni_str!("(Ljava/lang/String;)V"),
+                native_media_log as *mut c_void,
+            ),
+        ]
+    };
+    unsafe { env.register_native_methods(&**cls, &methods) }?;
+    let _ = REGISTERED.set(());
+    Ok(())
+}
+
 fn register_natives() -> jni::errors::Result<()> {
-    let mut registered = Ok(());
-    REGISTERED.get_or_init(|| {
-        let ctx = ndk_context::android_context();
-        let vm_ptr = ctx.vm().cast::<jni::sys::JavaVM>();
-        let act_ptr = ctx.context() as jni::sys::jobject;
-        if vm_ptr.is_null() || act_ptr.is_null() {
-            return;
-        }
-        let vm = unsafe { JavaVM::from_raw(vm_ptr) };
-        registered = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
-            let activity = unsafe { JObject::from_raw(env, act_ptr) };
-            let cls = env.get_object_class(&activity)?;
-            let methods = unsafe {
-                [
-                    NativeMethod::from_raw_parts(
-                        jni_str!("nativeMediaCommand"),
-                        jni_str!("(Ljava/lang/String;)V"),
-                        native_media_command as *mut c_void,
-                    ),
-                    NativeMethod::from_raw_parts(
-                        jni_str!("nativeMediaLog"),
-                        jni_str!("(Ljava/lang/String;)V"),
-                        native_media_log as *mut c_void,
-                    ),
-                ]
-            };
-            unsafe { env.register_native_methods(&cls, &methods) }?;
-            Ok(())
-        });
-    });
-    registered
+    let ctx = ndk_context::android_context();
+    let vm_ptr = ctx.vm().cast::<jni::sys::JavaVM>();
+    let app_ptr = ctx.context() as jni::sys::jobject;
+    if vm_ptr.is_null() || app_ptr.is_null() {
+        return Err(jni::errors::Error::NullPtr("ndk_context"));
+    }
+    let vm = unsafe { JavaVM::from_raw(vm_ptr) };
+    vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+        let cls = activity_class(env, app_ptr)?;
+        ensure_registered(env, cls)
+    })
 }
 
 fn with_activity<F>(call: F)
@@ -161,17 +213,18 @@ where
 {
     let ctx = ndk_context::android_context();
     let vm_ptr = ctx.vm().cast::<jni::sys::JavaVM>();
-    let act_ptr = ctx.context() as jni::sys::jobject;
-    if vm_ptr.is_null() || act_ptr.is_null() {
+    let app_ptr = ctx.context() as jni::sys::jobject;
+    if vm_ptr.is_null() || app_ptr.is_null() {
+        log::warn!("remote: android context unavailable");
         return;
     }
     let vm = unsafe { JavaVM::from_raw(vm_ptr) };
     if let Err(error) = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
-        let activity = unsafe { JObject::from_raw(env, act_ptr) };
-        let cls = env.get_object_class(&activity)?;
-        call(env, &cls)
+        let cls = activity_class(env, app_ptr)?;
+        ensure_registered(env, cls)?;
+        call(env, cls)
     }) {
-        log::warn!("remote: android jni call failed: {error}");
+        log::warn!("remote: android jni call failed: {error:#}");
     }
 }
 

@@ -246,8 +246,8 @@ impl Remote {
         self.at = at;
         self.stamp = Instant::now();
 
-        // macos runs the clock
-        if cfg!(target_os = "macos") && steady {
+        // macos and android advance the playback clock natively
+        if (cfg!(target_os = "macos") || cfg!(target_os = "android")) && steady {
             return;
         }
         self.controls.set_playback(&state, at);
