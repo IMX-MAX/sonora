@@ -25,6 +25,7 @@ webview = { path = "crates/webview" }
 widevine = { path = "crates/widevine" }
 
 alsa = "0.11"
+android-activity = { version = "0.6.1", features = ["native-activity"] }
 anyhow = "1.0"
 ardftsrc = "0.4.4"
 async-trait = "0.1"
@@ -216,6 +217,9 @@ percent-encoding = "2.3"
 protobuf = "3"
 pulseaudio = "0.3.2"
 opensubsonic = "0.7"
+jni = "0.22"
+rquickjs-sys = { version = "0.12.2", features = ["bindgen"] }
+rustls-platform-verifier = "0.7"
 tokio = { version = "1.54", features = [
     "rt-multi-thread",
     "net",

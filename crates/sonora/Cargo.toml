@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lib]
+name = "sonora"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
 [features]
 # the gpui frame overlay and repaint wash, off in normal builds
 profiler = ["gpui/profiler"]
@@ -79,6 +84,11 @@ windows-sys = { workspace = true, features = [
     "Win32_System_Console",
     "Win32_System_Threading",
 ] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity.workspace = true
+jni.workspace = true
+rustls-platform-verifier.workspace = true
 
 [build-dependencies]
 embed.workspace = true

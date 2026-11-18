@@ -10,13 +10,17 @@ use tokio::sync::mpsc;
 
 use crate::{Cover, Io, Playback, PlaybackState, Queue, Repeat, Sonora, join};
 
+#[cfg(target_os = "android")]
+mod android;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod mpris;
-#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod souvlaki;
 
-#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use self::souvlaki::Controls;
+#[cfg(target_os = "android")]
+use android::Controls;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use mpris::Controls;
 

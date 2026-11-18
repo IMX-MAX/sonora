@@ -91,6 +91,9 @@ objc2-core-foundation.workspace = true
 cpal = { workspace = true, features = ["realtime"] }
 windows.workspace = true
 
+[target.'cfg(target_os = "android")'.dependencies]
+rquickjs-sys.workspace = true
+
 [dev-dependencies]
 env_logger.workspace = true
 rustls.workspace = true

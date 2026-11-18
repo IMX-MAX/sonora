@@ -50,7 +50,7 @@ impl SettingsView {
         if !self.settings.read(cx).server_side_decorations() {
             slots.push(Slot::WindowRounding);
         }
-        #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+        #[cfg(target_os = "windows")]
         let slots = vec![
             Slot::Decorations,
             Slot::Side,
@@ -59,6 +59,13 @@ impl SettingsView {
         ];
         #[cfg(target_os = "macos")]
         let slots = vec![Slot::Decorations, Slot::WindowRounding];
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "freebsd",
+            target_os = "windows",
+            target_os = "macos"
+        )))]
+        let slots = Vec::new();
         slots
     }
 

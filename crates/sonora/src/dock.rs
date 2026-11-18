@@ -53,5 +53,5 @@ pub fn menu(shown: &crate::tray::Shown, cx: &mut gpui::App) {
     ]);
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "android")))]
 pub fn menu(_shown: &crate::tray::Shown, _cx: &mut gpui::App) {}
