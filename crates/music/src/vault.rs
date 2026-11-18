@@ -127,6 +127,8 @@ pub struct Vault {
     keys: OnceLock<hkdf::Prk>,
     /// Turns true once the vault has its key or will not get one this session.
     settled: watch::Sender<bool>,
+    /// Set on Android when orphaned sealed downloads with no persisted key had to be cleared.
+    orphaned_reset: AtomicBool,
     /// What the cache takes on disk, once a sweep has counted it.
     used: Mutex<Option<u64>>,
     /// The tracks being downloaded, by shelf and id, with what to call a plain download's file.
@@ -155,6 +157,7 @@ impl Vault {
             caching: AtomicBool::new(true),
             keys: OnceLock::new(),
             settled: watch::Sender::new(false),
+            orphaned_reset: AtomicBool::new(false),
             used: Mutex::new(None),
             wanted: Mutex::new(HashMap::new()),
         }
@@ -275,6 +278,11 @@ impl Vault {
         self.keys.get()
     }
 
+    /// Waits until the vault has unlocked or stayed locked, returning whether it is unlocked.
+    pub async fn wait_ready(&self) -> bool {
+        self.ready().await.is_some()
+    }
+
     /// The part of the vault one provider keeps its tracks in. `provider` names its folder and
     /// goes into every key, so no provider can open another's entries.
     pub(crate) fn shelf(self: &Arc<Self>, provider: &'static str) -> Shelf {
@@ -348,6 +356,16 @@ impl Vault {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => log::warn!("vault: cannot remove the downloads: {error}"),
         }
+    }
+
+    /// Notes that unrecoverable orphaned downloads were cleared during unlock.
+    pub fn mark_orphaned_reset(&self) {
+        self.orphaned_reset.store(true, Ordering::Release);
+    }
+
+    /// Returns and clears whether orphaned downloads were reset during unlock.
+    pub fn take_orphaned_reset(&self) -> bool {
+        self.orphaned_reset.swap(false, Ordering::AcqRel)
     }
 
     fn base(&self, place: Place) -> &Path {

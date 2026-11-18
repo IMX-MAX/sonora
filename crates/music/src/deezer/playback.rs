@@ -115,7 +115,19 @@ impl Fetch for Deezer {
         if let Some(loaded) = self.recall(id, served).await {
             return Ok(loaded);
         }
-        let opened = self.client.open_stream(id, self.quality).await?;
+        let opened = match self.client.open_stream(id, self.quality).await {
+            Ok(opened) => opened,
+            Err(error) => {
+                for format in ["FLAC_24", "FLAC", "MP3_320", "MP3_128", "MP3_MISC"] {
+                    if format != served
+                        && let Some(loaded) = self.recall(id, format).await
+                    {
+                        return Ok(loaded);
+                    }
+                }
+                return Err(error);
+            }
+        };
         let total = opened.response.content_length();
         let body = match &self.shelf {
             Some(shelf) => {

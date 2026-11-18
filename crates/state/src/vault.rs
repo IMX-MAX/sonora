@@ -61,6 +61,25 @@ pub(crate) fn unlock(vault: Arc<Vault>, cx: &mut App) -> Task<()> {
 /// moved into the keychain. Any other keychain error is taken as passing, so with no key file
 /// the vault stays locked rather than sealing tracks under a key the next launch will not find.
 async fn master(vault: &Arc<Vault>, cx: &mut AsyncApp) -> Result<Vec<u8>> {
+    if cfg!(target_os = "android") {
+        if let Some(master) = cx.background_spawn(async { from_file() }).await? {
+            return Ok(master);
+        }
+        let sealed = {
+            let vault = vault.clone();
+            cx.background_spawn(async move { vault.holds_downloads() })
+                .await
+        };
+        if sealed {
+            log::warn!("vault: clearing unrecoverable downloads sealed without a saved key");
+            let cloned = vault.clone();
+            cx.background_spawn(async move { cloned.forget_downloads() })
+                .await;
+            vault.mark_orphaned_reset();
+        }
+        return fresh(vault, false, cx).await;
+    }
+
     let read = cx.update(|cx| cx.read_credentials(KEYCHAIN_URL)).await;
     match read {
         Ok(Some((_, master))) if master.len() == MASTER => Ok(master),

@@ -277,6 +277,14 @@ impl Downloads {
             this.unseal(cx);
         })
         .detach();
+        let vault = playback.read(cx).vault().clone();
+        cx.spawn(async move |this, cx| {
+            vault.wait_ready().await;
+            if vault.take_orphaned_reset() {
+                this.update(cx, |this, cx| this.remove_all(cx)).ok();
+            }
+        })
+        .detach();
         Self {
             session,
             playback,
@@ -771,6 +779,7 @@ impl Downloads {
         self.failed.clear();
         self.stalled.clear();
         self.fetching.clear();
+        self.restore = None;
         self.playback
             .update(cx, |playback, cx| playback.remove_downloads(cx));
         self.write(|store| store.forget_everything());
