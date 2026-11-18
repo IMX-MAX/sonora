@@ -222,7 +222,9 @@ impl Shelves {
             return div().into_any_element();
         };
         let layout = CardGrid::layout(width);
-        let (handle, glide) = self.rails[place].clone();
+        let Some((handle, glide)) = self.rails.get(place).cloned() else {
+            return div().into_any_element();
+        };
         let crowded = section.items.len() > layout.columns;
         let feed = sections.clone();
         let drawn = me.clone();

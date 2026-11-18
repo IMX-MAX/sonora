@@ -50,6 +50,9 @@ pub fn veil(
         VeilEdge::Top => strip.rounded_t(radius),
         VeilEdge::Bottom => strip.rounded_b(radius),
     };
+    if height <= Pixels::ZERO {
+        return div().absolute().inset_0();
+    }
     let mut edges: Vec<Pixels> = (0..=STRIPS)
         .map(|slice| snapped(height * (slice as f32 / STRIPS as f32), window))
         .collect();
