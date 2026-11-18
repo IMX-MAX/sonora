@@ -1082,16 +1082,23 @@ impl Root {
 
 const UI_FONT: &str = "Inter";
 
-const SCRIPTS: [&str; 18] = [
+const SCRIPTS: [&str; 25] = [
     "Source Han Sans",
     "Noto Sans CJK JP",
     "Noto Sans CJK SC",
     "Noto Sans CJK TC",
     "Noto Sans CJK KR",
+    "Noto Sans JP",
+    "Noto Sans SC",
+    "Noto Sans TC",
+    "Noto Sans KR",
+    "Noto Sans CJK",
     "Noto Sans Arabic",
     "Noto Sans Hebrew",
     "Noto Sans Thai",
     "Noto Sans Devanagari",
+    "Droid Sans Fallback",
+    "Roboto",
     "Hiragino Sans",
     "PingFang SC",
     "Apple SD Gothic Neo",
