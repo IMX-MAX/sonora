@@ -218,6 +218,7 @@ protobuf = "3"
 pulseaudio = "0.3.2"
 opensubsonic = "0.7"
 jni = "0.22"
+ndk-context = "0.1.1"
 rquickjs-sys = { version = "0.12.2", features = ["bindgen"] }
 rustls-platform-verifier = "0.7"
 webpki-roots = "1"

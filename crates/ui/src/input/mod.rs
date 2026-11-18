@@ -763,7 +763,6 @@ impl Input {
             return;
         }
         self.context_menu = None;
-        window.request_virtual_keyboard();
         self.selecting = true;
         let offset = self.offset_for(event.position);
         match (event.click_count, event.modifiers.shift) {
@@ -844,7 +843,15 @@ impl Input {
         }
     }
 
-    fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
+    fn on_mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, _: &mut Context<Self>) {
+        if self.selecting
+            && self.focus_handle.is_focused(window)
+            && self
+                .last_bounds
+                .is_some_and(|bounds| bounds.contains(&event.position))
+        {
+            window.request_virtual_keyboard();
+        }
         self.selecting = false;
         self.selected_word = None;
     }

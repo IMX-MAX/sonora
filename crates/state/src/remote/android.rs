@@ -1,35 +1,200 @@
 use std::ffi::c_void;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use anyhow::Result;
 use gpui::App;
+use jni::objects::{JClass, JObject, JString, JValue};
+use jni::{Env, EnvUnowned, JavaVM, NativeMethod, jni_sig, jni_str};
 use music::Track;
 use tokio::sync::mpsc;
 
 use super::Command;
 use crate::{PlaybackState, Repeat};
 
-/// Stub system media controls for Android until a Java/JNI `MediaSession` bridge is wired.
-pub struct Controls;
+static COMMANDS: Mutex<Option<mpsc::UnboundedSender<Command>>> = Mutex::new(None);
+static REGISTERED: OnceLock<()> = OnceLock::new();
+
+/// Android `MediaSession` and media notification controls bridged to `SonoraActivity` via JNI.
+pub struct Controls {
+    last_state: i32,
+}
 
 impl Controls {
     pub fn new(
         _hwnd: Option<*mut c_void>,
-        _commands: mpsc::UnboundedSender<Command>,
+        commands: mpsc::UnboundedSender<Command>,
         _cx: &mut App,
     ) -> Result<Self> {
-        Ok(Self)
+        *COMMANDS.lock().unwrap_or_else(|e| e.into_inner()) = Some(commands);
+        if let Err(error) = register_natives() {
+            log::warn!("remote: cannot register Android media callback: {error:#}");
+        }
+        Ok(Self { last_state: 0 })
     }
 
-    pub fn describe(&mut self, _track: Option<&Track>, _cover: Option<&str>, _cx: &App) {}
+    pub fn describe(&mut self, track: Option<&Track>, cover: Option<&str>, _cx: &App) {
+        let (title, artist, album, duration_ms) = match track {
+            Some(track) => (
+                track.name.as_str(),
+                track.artists.as_str(),
+                track.album.as_str(),
+                i64::try_from(track.duration.as_millis()).unwrap_or(0),
+            ),
+            None => ("", "", "", 0),
+        };
+        let cover_path = cover.unwrap_or("");
+        with_activity(|env, cls| {
+            let jtitle = env.new_string(title)?;
+            let jartist = env.new_string(artist)?;
+            let jalbum = env.new_string(album)?;
+            let jcover = env.new_string(cover_path)?;
+            env.call_static_method(
+                cls,
+                jni_str!("updateMediaMetadata"),
+                jni_sig!((java.lang.String, java.lang.String, java.lang.String, long, java.lang.String) -> void),
+                &[
+                    JValue::from(&jtitle),
+                    JValue::from(&jartist),
+                    JValue::from(&jalbum),
+                    JValue::Long(duration_ms),
+                    JValue::from(&jcover),
+                ],
+            )?;
+            Ok(())
+        });
+    }
 
-    pub fn set_playback(&mut self, _state: &PlaybackState, _at: Duration) {}
+    pub fn set_playback(&mut self, state: &PlaybackState, at: Duration) {
+        let (code, speed) = match state {
+            PlaybackState::Playing => (1, 1.0f32),
+            PlaybackState::Paused => (2, 0.0f32),
+            PlaybackState::Loading => (3, 0.0f32),
+            PlaybackState::Idle | PlaybackState::Failed(_) => (0, 0.0f32),
+        };
+        self.last_state = code;
+        let pos_ms = i64::try_from(at.as_millis()).unwrap_or(0);
+        with_activity(|env, cls| {
+            env.call_static_method(
+                cls,
+                jni_str!("updateMediaPlayback"),
+                jni_sig!((int, long, float) -> void),
+                &[
+                    JValue::Int(code),
+                    JValue::Long(pos_ms),
+                    JValue::Float(speed),
+                ],
+            )?;
+            Ok(())
+        });
+    }
 
-    pub fn seeked(&mut self, _at: Duration) {}
+    pub fn seeked(&mut self, at: Duration) {
+        let code = self.last_state;
+        let speed = match code {
+            1 => 1.0f32,
+            _ => 0.0f32,
+        };
+        let pos_ms = i64::try_from(at.as_millis()).unwrap_or(0);
+        with_activity(|env, cls| {
+            env.call_static_method(
+                cls,
+                jni_str!("updateMediaPlayback"),
+                jni_sig!((int, long, float) -> void),
+                &[
+                    JValue::Int(code),
+                    JValue::Long(pos_ms),
+                    JValue::Float(speed),
+                ],
+            )?;
+            Ok(())
+        });
+    }
 
     pub fn set_volume(&mut self, _level: f64) {}
 
     pub fn set_shuffle(&mut self, _on: bool) {}
 
     pub fn set_repeat(&mut self, _repeat: Repeat) {}
+}
+
+fn register_natives() -> jni::errors::Result<()> {
+    let mut registered = Ok(());
+    REGISTERED.get_or_init(|| {
+        let ctx = ndk_context::android_context();
+        let vm_ptr = ctx.vm().cast::<jni::sys::JavaVM>();
+        let act_ptr = ctx.context() as jni::sys::jobject;
+        if vm_ptr.is_null() || act_ptr.is_null() {
+            return;
+        }
+        let vm = unsafe { JavaVM::from_raw(vm_ptr) };
+        registered = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+            let activity = unsafe { JObject::from_raw(env, act_ptr) };
+            let cls = env.get_object_class(&activity)?;
+            let method = unsafe {
+                NativeMethod::from_raw_parts(
+                    jni_str!("nativeMediaCommand"),
+                    jni_str!("(Ljava/lang/String;)V"),
+                    native_media_command as *mut c_void,
+                )
+            };
+            unsafe { env.register_native_methods(&cls, &[method]) }?;
+            Ok(())
+        });
+    });
+    registered
+}
+
+fn with_activity<F>(call: F)
+where
+    F: FnOnce(&mut Env<'_>, &JClass<'_>) -> jni::errors::Result<()>,
+{
+    let ctx = ndk_context::android_context();
+    let vm_ptr = ctx.vm().cast::<jni::sys::JavaVM>();
+    let act_ptr = ctx.context() as jni::sys::jobject;
+    if vm_ptr.is_null() || act_ptr.is_null() {
+        return;
+    }
+    let vm = unsafe { JavaVM::from_raw(vm_ptr) };
+    if let Err(error) = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+        let activity = unsafe { JObject::from_raw(env, act_ptr) };
+        let cls = env.get_object_class(&activity)?;
+        call(env, &cls)
+    }) {
+        log::debug!("remote: android jni call failed: {error}");
+    }
+}
+
+extern "system" fn native_media_command<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    cmd: JString<'local>,
+) {
+    let _ = unowned_env
+        .with_env(|env| -> jni::errors::Result<()> {
+            let text = cmd.try_to_string(env)?;
+            if let Some(command) = parse_command(&text)
+                && let Some(sender) = COMMANDS.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+            {
+                let _ = sender.send(command);
+            }
+            Ok(())
+        })
+        .resolve::<jni::errors::LogErrorAndDefault>();
+}
+
+fn parse_command(text: &str) -> Option<Command> {
+    if let Some(ms) = text.strip_prefix("SEEK:")
+        && let Ok(ms) = ms.parse::<u64>()
+    {
+        return Some(Command::Seek(Duration::from_millis(ms)));
+    }
+    match text {
+        "PLAY" => Some(Command::Play),
+        "PAUSE" => Some(Command::Pause),
+        "TOGGLE" => Some(Command::Toggle),
+        "NEXT" => Some(Command::Next),
+        "PREVIOUS" => Some(Command::Previous),
+        _ => None,
+    }
 }

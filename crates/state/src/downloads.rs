@@ -278,9 +278,12 @@ impl Downloads {
         })
         .detach();
         let vault = playback.read(cx).vault().clone();
-        cx.spawn(async move |this, cx| {
+        let wait = io.spawn(async move {
             vault.wait_ready().await;
-            if vault.take_orphaned_reset() {
+            anyhow::Ok(vault.take_orphaned_reset())
+        });
+        cx.spawn(async move |this, cx| {
+            if join(wait).await.unwrap_or(false) {
                 this.update(cx, |this, cx| this.remove_all(cx)).ok();
             }
         })

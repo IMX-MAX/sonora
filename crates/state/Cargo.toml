@@ -50,6 +50,10 @@ windows-sys.workspace = true
 objc2-core-foundation.workspace = true
 objc2-io-kit.workspace = true
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+ndk-context.workspace = true
+
 [build-dependencies]
 embed.workspace = true
 
