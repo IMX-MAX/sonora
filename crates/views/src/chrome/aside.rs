@@ -8,9 +8,10 @@ use gpui::prelude::*;
 use gpui::accesskit::{Role, Toggled};
 use gpui::{
     Animation, AnimationExt as _, App, Bounds, Context, Div, DragMoveEvent, Entity, ExternalPaths,
-    FontWeight, MouseDownEvent, MouseUpEvent, Pixels, Point, Render, ScrollHandle, ScrollStrategy,
-    SharedString, Size, SpringConfig, SpringState, Task, UniformListScrollHandle, Window, canvas,
-    div, ease_in_out, px, relative, size, svg, uniform_list,
+    FontWeight, HitboxBehavior, LongPressEvent, MouseDownEvent, MouseUpEvent, Pixels, Point,
+    Render, ScrollDelta, ScrollHandle, ScrollStrategy, ScrollWheelEvent, SharedString, Size,
+    SpringConfig, SpringState, Task, TouchPhase, UniformListScrollHandle, Window, canvas, div,
+    ease_in_out, px, relative, size, svg, uniform_list,
 };
 use i18n::t;
 use music::{Contributor, Shape, Track, Voice};
@@ -31,9 +32,15 @@ use unicode_bidi::{BidiClass, Direction};
 use crate::chrome::{Chrome, section_label};
 use crate::shared::menus::ItemMenu;
 use crate::shared::pins::Pinned as _;
-use crate::shared::{effects, quiet};
+use crate::shared::{MOBILE, effects, quiet};
 
 const QUEUE: &str = "queue";
+/// How far a held queue row may move before the hold becomes a drag, which drops its menu.
+const HOLD_SLOP: Pixels = px(8.);
+/// How far, in text heights, a queue row is swiped sideways before letting go removes it.
+const SWIPE_REMS: f32 = 6.;
+/// How far the queue scrolls for each move of a held row near its top or bottom edge.
+const EDGE_STEP: Pixels = px(12.);
 /// How many text heights across the picture of whoever queued a song is.
 const ADDER_FACE: f32 = 1.4;
 const BULLET: SharedString = SharedString::new_static("·");
@@ -168,6 +175,34 @@ struct RowLook {
     queued: bool,
     /// Whether the row is on another device's queue, which this app shows but cannot change.
     remote: bool,
+    /// Whether the last input came from a touch screen, which has no hover to show the remove
+    /// button by.
+    touch: bool,
+    /// How far the row is swiped sideways, and the opacity it fades to on the way out.
+    swipe: (Pixels, f32),
+    /// How far a held row has been dragged up or down, or `None` when it is not held.
+    lift: Option<Pixels>,
+}
+
+/// A queue row held down on a touch screen. Letting go without moving opens its menu, and
+/// moving it past [`HOLD_SLOP`] drags it to another place in the queue instead.
+#[derive(Clone)]
+struct Held {
+    uid: String,
+    /// Its place among the upcoming tracks.
+    index: usize,
+    revision: u64,
+    track: Track,
+    start: Point<Pixels>,
+    at: Point<Pixels>,
+    dragging: bool,
+}
+
+/// A queue row being swiped sideways on a touch screen, by its uid.
+#[derive(Clone)]
+struct Swipe {
+    uid: String,
+    offset: Pixels,
 }
 
 /// What a drop onto the queue carried: drag within the app, or files from another program.
@@ -230,6 +265,10 @@ pub(crate) struct Aside {
     /// When the verses were last followed, which tells a sheet that was off screen for a while.
     drawn: std::time::Instant,
     context_menu: Option<ContextMenuState>,
+    /// The queue row held down on a touch screen.
+    grip: Option<Held>,
+    /// The queue row being swiped away on a touch screen.
+    swipe: Option<Swipe>,
     track_menu: ItemMenu,
     drop_gap: Option<usize>,
     scroll: UniformListScrollHandle,
@@ -341,6 +380,8 @@ impl Aside {
             put: None,
             drawn: std::time::Instant::now(),
             context_menu: None,
+            grip: None,
+            swipe: None,
             track_menu: ItemMenu::new(playlist_scrollbar, cx),
             drop_gap: None,
             scroll,
@@ -416,6 +457,8 @@ impl Aside {
     pub(crate) fn dismiss(&mut self, cx: &mut Context<Self>) {
         self.track_menu.reset(cx);
         self.context_menu = None;
+        self.grip = None;
+        self.swipe = None;
         cx.notify();
     }
 
@@ -705,6 +748,171 @@ impl Aside {
         cx.notify();
     }
 
+    /// Picks up a queue row held down on a touch screen.
+    fn hold(&mut self, held: Held, cx: &mut Context<Self>) {
+        self.swipe = None;
+        self.drop_gap = None;
+        self.grip = Some(held);
+        cx.notify();
+    }
+
+    /// Follows the finger holding a queue row: past [`HOLD_SLOP`] the hold turns into a drag,
+    /// and a drag near the top or bottom of the list scrolls it. Letting go drops the row at the
+    /// marked gap, or opens its menu when it never moved.
+    fn follow_hold(
+        &mut self,
+        event: &LongPressEvent,
+        list: Bounds<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(held) = self.grip.as_mut() else {
+            return;
+        };
+        match event.phase {
+            TouchPhase::Started => {}
+            TouchPhase::Moved => {
+                held.at = event.position;
+                let moved = event.position - held.start;
+                if !held.dragging && moved.magnitude() > f64::from(HOLD_SLOP) {
+                    held.dragging = true;
+                }
+                if held.dragging {
+                    self.edge_scroll(list, event.position, cx);
+                }
+                cx.notify();
+            }
+            TouchPhase::Ended => self.let_go(cx),
+            TouchPhase::Cancelled => {
+                self.grip = None;
+                self.drop_gap = None;
+                cx.notify();
+            }
+        }
+    }
+
+    /// Marks the gap a dragged row would land in, from the row `row` under the finger.
+    fn hold_over(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        position: Point<Pixels>,
+        row: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(held) = self.grip.as_ref().filter(|held| held.dragging) else {
+            return;
+        };
+        // The held row rides under the finger, so the row beneath it says where it goes.
+        if row == held.index {
+            return;
+        }
+        let Some(gap) = drop_gap(bounds, position, row) else {
+            return;
+        };
+        let gap = (gap != held.index && gap != held.index + 1).then_some(gap);
+        if self.drop_gap != gap {
+            self.drop_gap = gap;
+            cx.notify();
+        }
+    }
+
+    /// Ends a hold: a row that never moved opens its menu where it was held, and a dragged one
+    /// moves to the marked gap.
+    fn let_go(&mut self, cx: &mut Context<Self>) {
+        let Some(held) = self.grip.take() else {
+            return;
+        };
+        let gap = self.drop_gap.take();
+        match held.dragging {
+            false => {
+                self.track_menu.reset(cx);
+                self.context_menu = Some(ContextMenuState {
+                    track: held.track,
+                    revision: held.revision,
+                    position: held.at,
+                });
+            }
+            true => {
+                if let Some(gap) = gap {
+                    self.queue.update(cx, |queue, cx| {
+                        if queue.revision() == held.revision {
+                            queue.move_upcoming_to_gap(held.index, gap, cx);
+                        }
+                    });
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Scrolls the queue a step while a dragged row is held near its top or bottom edge.
+    fn edge_scroll(&self, list: Bounds<Pixels>, at: Point<Pixels>, cx: &App) {
+        let edge = cx.theme().metrics.list_row;
+        let step = match at.y {
+            y if y < list.top() + edge => EDGE_STEP,
+            y if y > list.bottom() - self.bottom(cx) - edge => -EDGE_STEP,
+            _ => return,
+        };
+        let handle = self.scroll.0.borrow().base_handle.clone();
+        let mut offset = handle.offset();
+        offset.y = (offset.y + step).clamp(-handle.max_offset().y, Pixels::ZERO);
+        handle.set_offset(offset);
+    }
+
+    /// Moves a queue row sideways with a finger panning across it, and removes the row when it
+    /// is let go far enough out. Only a touch pan that starts sideways swipes; one that starts
+    /// up or down scrolls the queue, and a touchpad never swipes.
+    fn swipe_row(
+        &mut self,
+        uid: &str,
+        event: &ScrollWheelEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !(MOBILE || window.last_input_was_touch()) || self.grip.is_some() {
+            return;
+        }
+        let ScrollDelta::Pixels(delta) = event.delta else {
+            return;
+        };
+        match event.touch_phase {
+            TouchPhase::Started => {
+                if delta.x.abs() <= delta.y.abs() {
+                    return;
+                }
+                self.swipe = Some(Swipe {
+                    uid: uid.to_owned(),
+                    offset: delta.x,
+                });
+            }
+            TouchPhase::Moved => {
+                // The finger may drift onto a neighbouring row, so any row carries on the swipe.
+                let Some(swipe) = self.swipe.as_mut() else {
+                    return;
+                };
+                swipe.offset += delta.x;
+            }
+            TouchPhase::Ended => {
+                let Some(swipe) = self.swipe.take() else {
+                    return;
+                };
+                if (swipe.offset + delta.x).abs() >= window.rem_size() * SWIPE_REMS {
+                    self.queue.update(cx, |queue, cx| {
+                        if let Some(position) = queue.position(&swipe.uid) {
+                            queue.remove(position, cx);
+                        }
+                    });
+                }
+            }
+            TouchPhase::Cancelled => {
+                if self.swipe.take().is_none() {
+                    return;
+                }
+            }
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
     fn dismiss_menu(&mut self, cx: &mut Context<Self>) {
         self.track_menu.reset(cx);
         self.context_menu = None;
@@ -725,6 +933,9 @@ impl Aside {
             drop_line,
             queued,
             remote,
+            touch,
+            swipe,
+            lift,
         } = look;
         let theme = *cx.theme();
         let queue_index = position.upcoming().filter(|_| !remote);
@@ -743,6 +954,15 @@ impl Aside {
         };
         let pin = track.pin();
         let menu_track = track.clone();
+        let held = queue_index.zip(uid.clone()).map(|(index, uid)| Held {
+            uid,
+            index,
+            revision: queue_revision,
+            track: track.clone(),
+            start: Point::default(),
+            at: Point::default(),
+            dragging: false,
+        });
         // A queue entry keeps its uid while it moves, so its nodes stay put for screen readers.
         let key = match (uid.as_deref(), position) {
             (Some(uid), QueuePosition::Past(_)) => format!("past-{uid}"),
@@ -819,6 +1039,7 @@ impl Aside {
                 }
             }))
         })
+        .action_shown(touch)
         .when(queue_index.is_some(), |card| {
             card.action(
                 Button::new(SharedString::from(format!("remove-queued-track-{key}")))
@@ -870,8 +1091,26 @@ impl Aside {
             .aria_size_of_set(total)
             .relative()
             .min_w_0()
+            .when(swipe.0 != Pixels::ZERO, |this| {
+                this.left(swipe.0).opacity(swipe.1)
+            })
+            .when_some(lift, |this, lift| {
+                this.top(lift)
+                    .bg(theme.table_active)
+                    .rounded(theme.radius)
+                    .shadow_md()
+            })
             .child(card)
             .when_some(drop_line, |this, edge| this.child(drop_marker(edge, cx)))
+            .when_some(held, |this, held| {
+                let uid = held.uid.clone();
+                this.on_scroll_wheel(cx.listener(
+                    move |this, event: &ScrollWheelEvent, window, cx| {
+                        this.swipe_row(&uid, event, window, cx)
+                    },
+                ))
+                .child(hold_spot(cx.entity(), held))
+            })
     }
 
     fn menu(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
@@ -2027,7 +2266,17 @@ impl Aside {
         uniform_list(
             "queue-rows",
             sections.len() + under + TAIL_ROWS,
-            cx.processor(move |_, range: Range<usize>, window, cx| {
+            cx.processor(move |this, range: Range<usize>, window, cx| {
+                let touch = MOBILE || window.last_input_was_touch();
+                let swiped = this.swipe.clone();
+                let swipe_reach = window.rem_size() * SWIPE_REMS;
+                let held = this.grip.as_ref().map(|held| {
+                    let lift = match held.dragging {
+                        true => held.at.y - held.start.y,
+                        false => Pixels::ZERO,
+                    };
+                    (held.uid.clone(), lift)
+                });
                 let reach = (range.len() as f32 * PREFETCH_REACH).ceil() as usize;
                 let near = (range.start.saturating_sub(reach)..range.start)
                     .chain(range.end..(range.end + reach).min(sections.len()));
@@ -2068,11 +2317,30 @@ impl Aside {
                             }
                             _ => None,
                         };
+                        let uid = Sonora::global(cx)
+                            .queue
+                            .read(cx)
+                            .uid(position)
+                            .map(str::to_owned);
+                        let swipe = swiped
+                            .as_ref()
+                            .filter(|swipe| uid.as_deref() == Some(swipe.uid.as_str()))
+                            .map_or((Pixels::ZERO, 1.), |swipe| {
+                                let fade = 1. - swipe.offset.abs() / (swipe_reach * 2.);
+                                (swipe.offset, fade.clamp(0.3, 1.))
+                            });
+                        let lift = held
+                            .as_ref()
+                            .filter(|(held, _)| uid.as_deref() == Some(held.as_str()))
+                            .map(|(_, lift)| *lift);
                         let look = RowLook {
                             playing: audible && position == QueuePosition::Current,
                             drop_line,
                             queued: sections.kind(position) == Some(state::QueueKind::Queued),
                             remote,
+                            touch,
+                            swipe,
+                            lift,
                         };
                         let place = track_place(&sections, position);
                         Self::row(track, index, position, revision, look, place, cx)
@@ -2096,7 +2364,7 @@ impl Render for Aside {
         let sections = listing.sections.clone();
         let remote = !listing.editable();
         let empty = sections.is_empty();
-        if !cx.has_active_drag() {
+        if !cx.has_active_drag() && !self.grip.as_ref().is_some_and(|held| held.dragging) {
             self.drop_gap = None;
         }
 
@@ -2198,10 +2466,63 @@ impl Render for Aside {
                     .when(self.titled, |this| {
                         this.children(self.follow(cx))
                             .children(self.recall(&sections, window, cx))
+                    })
+                    .when(self.grip.is_some(), |this| {
+                        this.child(hold_tracker(cx.entity()))
                     }),
             )
             .children(self.menu(cx))
     }
+}
+
+/// A layer over an upcoming queue row that claims a long press on it, so holding the row picks
+/// it up, and that marks the gap a dragged row would land in while the finger is over it.
+fn hold_spot(aside: Entity<Aside>, held: Held) -> impl IntoElement {
+    canvas(
+        |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+        move |bounds, hitbox, window, _| {
+            window.on_mouse_event(move |event: &LongPressEvent, phase, window, cx| {
+                if !phase.bubble() || !hitbox.is_hovered(window) {
+                    return;
+                }
+                match event.phase {
+                    TouchPhase::Started if !window.default_prevented() => {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        let held = Held {
+                            start: event.start_position,
+                            at: event.position,
+                            ..held.clone()
+                        };
+                        aside.update(cx, |this, cx| this.hold(held, cx));
+                    }
+                    TouchPhase::Moved => aside.update(cx, |this, cx| {
+                        this.hold_over(bounds, event.position, held.index, cx)
+                    }),
+                    _ => {}
+                }
+            });
+        },
+    )
+    .absolute()
+    .inset_0()
+}
+
+/// A layer over the whole queue, there while a row is held, that follows the hold to its end
+/// wherever the finger goes.
+fn hold_tracker(aside: Entity<Aside>) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            window.on_mouse_event(move |event: &LongPressEvent, phase, _, cx| {
+                if phase.bubble() {
+                    aside.update(cx, |this, cx| this.follow_hold(event, bounds, cx));
+                }
+            });
+        },
+    )
+    .absolute()
+    .inset_0()
 }
 
 /// The part of a queue row that names who queued the song: a bullet, their round picture or

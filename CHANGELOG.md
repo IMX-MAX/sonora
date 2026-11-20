@@ -11,9 +11,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Click the tray icon on Linux to show Sonora's window, or to hide it into the tray when it is open.
 - Choose Wide under Settings, Appearance, Page width to let pages fill a large window again instead of staying centred.
+- Swipe a song sideways in the queue on a touch screen to remove it, or hold it and drag it to a new place.
+- Search on Android opens quick search, as Ctrl+K does.
 
 ### Fixed
 
+- The remove button on queue songs shows and responds to taps on touch screens.
+- Holding a queue song on Android opens its menu only when you let go without dragging.
+- Downloads on Android are kept as plain files that play straight away, and earlier downloads are moved over on their own.
 - Music keeps playing smoothly on Windows while another program keeps the processor busy, without raising Sonora's priority in Task Manager.
 - The fullscreen player counts down the time left when Show time left is on, as the player bar does.
 - Clicking a song or other suggestion under the search page field opens it again instead of just closing the list.

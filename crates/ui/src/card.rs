@@ -80,6 +80,8 @@ pub struct Card {
     action: Option<AnyElement>,
     /// Whether the hover action takes no room until the card is hovered.
     collapsed: bool,
+    /// Whether the action shows without a hover, for a touch screen that has none.
+    action_shown: bool,
     drag_start: Option<DragStart>,
     menu: Option<Summon>,
 }
@@ -124,6 +126,7 @@ impl Card {
             glance: false,
             action: None,
             collapsed: false,
+            action_shown: false,
             drag_start: None,
             menu: None,
         }
@@ -194,6 +197,13 @@ impl Card {
     pub fn collapsed_action(mut self, action: impl IntoElement) -> Self {
         self.action = Some(action.into_any_element());
         self.collapsed = true;
+        self
+    }
+
+    /// Shows the action whether or not the card is hovered when `shown` is true. A touch screen
+    /// has no hover, and an action that never shows is never painted, so it cannot be tapped.
+    pub fn action_shown(mut self, shown: bool) -> Self {
+        self.action_shown = shown;
         self
     }
 
@@ -391,6 +401,7 @@ impl RenderOnce for Card {
             glance,
             action,
             collapsed,
+            action_shown,
             drag_start,
             menu,
         } = self;
@@ -739,8 +750,9 @@ impl RenderOnce for Card {
                 div()
                     .id("card-action")
                     .flex_none()
-                    .map(|this| match collapsed {
-                        true => this
+                    .map(|this| match (collapsed, action_shown) {
+                        (_, true) => this,
+                        (true, false) => this
                             .overflow_hidden()
                             .invisible()
                             // Keep the action in prepaint even when it takes no space.
@@ -757,7 +769,7 @@ impl RenderOnce for Card {
                                     })
                                 },
                             ),
-                        false => this
+                        (false, false) => this
                             .invisible()
                             .group_hover(CARD_GROUP, |style| style.visible()),
                     })
