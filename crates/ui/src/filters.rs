@@ -4,7 +4,8 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, Div, DragMoveEvent, ElementId, Empty, Hsla, MouseButton, MouseDownEvent, Pixels,
-    Render, SharedString, Stateful, StyleRefinement, Window, canvas, div, px, relative,
+    Render, ScrollDelta, ScrollWheelEvent, SharedString, Stateful, StyleRefinement, TouchPhase,
+    Window, canvas, div, px, relative,
 };
 
 use i18n::t;
@@ -148,6 +149,11 @@ pub struct SortAxis {
     pub order: Option<Sort>,
 }
 
+/// Whether the platform is a touch screen first.
+const TOUCH: bool = cfg!(any(target_os = "android", target_os = "ios"));
+/// How far outside the rail a finger may start dragging a handle.
+const TOUCH_REACH: Pixels = px(12.);
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Handle {
     Low,
@@ -168,6 +174,8 @@ pub struct RangeState {
     id: SharedString,
     bounds: Rc<Cell<Bounds<Pixels>>>,
     active: Rc<Cell<Handle>>,
+    /// Whether a finger is dragging one of the handles.
+    touch: Rc<Cell<bool>>,
 }
 
 impl RangeState {
@@ -176,6 +184,7 @@ impl RangeState {
             id: id.into(),
             bounds: Rc::new(Cell::new(Bounds::default())),
             active: Rc::new(Cell::new(Handle::Low)),
+            touch: Rc::new(Cell::new(false)),
         }
     }
 
@@ -196,6 +205,7 @@ pub struct RangeScrubber {
     id: SharedString,
     bounds: Rc<Cell<Bounds<Pixels>>>,
     active: Rc<Cell<Handle>>,
+    touch: Rc<Cell<bool>>,
     value: (f32, f32),
     stops: Rc<[f32]>,
     filled: Hsla,
@@ -216,6 +226,7 @@ impl RangeScrubber {
             id: state.id.clone(),
             bounds: state.bounds.clone(),
             active: state.active.clone(),
+            touch: state.touch.clone(),
             value: (value.0.clamp(0., 1.), value.1.clamp(0., 1.)),
             stops: Rc::from(Vec::new()),
             filled: gpui::white(),
@@ -279,6 +290,7 @@ impl RenderOnce for RangeScrubber {
             id,
             bounds,
             active,
+            touch,
             value,
             stops,
             filled,
@@ -294,6 +306,7 @@ impl RenderOnce for RangeScrubber {
             id: id.clone(),
             bounds: bounds.clone(),
             active,
+            touch,
         });
         let on_change = on_change.map(Rc::new);
 
@@ -311,6 +324,53 @@ impl RenderOnce for RangeScrubber {
                 if let Some(handler) = on_change.as_ref() {
                     handler(&clamped_against_other(value, near, share), window, cx);
                 }
+            }
+        };
+
+        // A finger's drag arrives as touch scrolling, so the nearer handle follows that along
+        // the rail from the moment it starts there until the finger lifts.
+        let slid = {
+            let state = state.clone();
+            let on_change = on_change.clone();
+            let stops = stops.clone();
+            move |event: &ScrollWheelEvent, window: &mut Window, cx: &mut App| -> bool {
+                if !(TOUCH || window.last_input_was_touch()) {
+                    return false;
+                }
+                let ScrollDelta::Pixels(delta) = event.delta else {
+                    return false;
+                };
+                match (event.touch_phase, state.touch.get()) {
+                    (TouchPhase::Started, _) => {
+                        let reach = state.bounds.get().dilate(TOUCH_REACH);
+                        if delta.x.abs() <= delta.y.abs() || !reach.contains(&event.position) {
+                            return false;
+                        }
+                        let share = snap(state.share_at(event.position.x, pad), &stops);
+                        state.active.set(
+                            match (share - value.0).abs() <= (share - value.1).abs() {
+                                true => Handle::Low,
+                                false => Handle::High,
+                            },
+                        );
+                        state.touch.set(true);
+                    }
+                    (TouchPhase::Moved, true) => {}
+                    (TouchPhase::Ended | TouchPhase::Cancelled, true) => {
+                        state.touch.set(false);
+                        return true;
+                    }
+                    _ => return false,
+                }
+                let share = snap(state.share_at(event.position.x, pad), &stops);
+                if let Some(handler) = on_change.as_ref() {
+                    handler(
+                        &clamped_against_other(value, state.active.get(), share),
+                        window,
+                        cx,
+                    );
+                }
+                true
             }
         };
 
@@ -408,9 +468,21 @@ impl RenderOnce for RangeScrubber {
                             .child(knob(Handle::High, high_value)),
                     )
                     .child(
-                        canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {})
-                            .absolute()
-                            .size_full(),
+                        canvas(
+                            move |b, _, _| bounds.set(b),
+                            move |_, _, window, _| {
+                                let slid = slid.clone();
+                                window.on_mouse_event(
+                                    move |event: &ScrollWheelEvent, phase, window, cx| {
+                                        if phase.capture() && slid(event, window, cx) {
+                                            cx.stop_propagation();
+                                        }
+                                    },
+                                );
+                            },
+                        )
+                        .absolute()
+                        .size_full(),
                     ),
             );
         scrubber.style().refine(&overrides);

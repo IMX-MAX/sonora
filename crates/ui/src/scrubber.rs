@@ -6,8 +6,8 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, Div, DragMoveEvent, ElementId, Empty, Hsla, MouseButton, MouseDownEvent,
-    MouseUpEvent, Pixels, Point, Render, SharedString, Stateful, StyleRefinement, Window, canvas,
-    div, px, relative,
+    MouseUpEvent, Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Stateful,
+    StyleRefinement, TouchPhase, Window, canvas, div, px, relative,
 };
 
 const TRACK: f32 = 0.5;
@@ -18,6 +18,10 @@ const BUBBLE: f32 = 7.;
 const LIFT: Pixels = px(12.);
 /// How far one screen reader step moves the slider, as a share of its length.
 const STEP: f32 = 0.05;
+/// Whether the platform is a touch screen first.
+const TOUCH: bool = cfg!(any(target_os = "android", target_os = "ios"));
+/// How far outside the slider a finger may start dragging it.
+const TOUCH_REACH: Pixels = px(12.);
 
 type Slide = Box<dyn Fn(&f32, &mut Window, &mut App) + 'static>;
 type Release = Box<dyn Fn(&MouseUpEvent, &mut Window, &mut App) + 'static>;
@@ -46,6 +50,8 @@ impl Render for Grab {
 pub struct ScrubberState {
     id: SharedString,
     bounds: Rc<Cell<Bounds<Pixels>>>,
+    /// Where a finger dragging the slider last was, while one is.
+    touch: Rc<Cell<Option<Point<Pixels>>>>,
 }
 
 impl ScrubberState {
@@ -53,6 +59,7 @@ impl ScrubberState {
         Self {
             id: id.into(),
             bounds: Rc::new(Cell::new(Bounds::default())),
+            touch: Rc::new(Cell::new(None)),
         }
     }
 
@@ -95,6 +102,7 @@ pub struct Scrubber {
     base: Stateful<Div>,
     id: SharedString,
     bounds: Rc<Cell<Bounds<Pixels>>>,
+    touch: Rc<Cell<Option<Point<Pixels>>>>,
     fraction: f32,
     filled: Hsla,
     empty: Hsla,
@@ -118,6 +126,7 @@ impl Scrubber {
             base: div().id(ElementId::Name(state.id.clone())),
             id: state.id.clone(),
             bounds: state.bounds.clone(),
+            touch: state.touch.clone(),
             fraction: fraction.clamp(0., 1.),
             filled: gpui::white(),
             empty: gpui::black(),
@@ -232,6 +241,7 @@ impl RenderOnce for Scrubber {
             mut base,
             id,
             bounds,
+            touch,
             fraction,
             filled,
             empty,
@@ -251,6 +261,7 @@ impl RenderOnce for Scrubber {
         let state = Rc::new(ScrubberState {
             id: id.clone(),
             bounds: bounds.clone(),
+            touch: touch.clone(),
         });
         let on_move = on_move.map(Rc::new);
         let on_release = on_release.map(Rc::new);
@@ -267,6 +278,63 @@ impl RenderOnce for Scrubber {
                 if let Some(handler) = on_move.as_ref() {
                     handler(&at(&state, event.position), window, cx);
                 }
+            }
+        };
+
+        // A touch screen sends a finger's drag as touch scrolling rather than a held mouse, so
+        // the slider follows that along its own axis, from the moment it starts on the slider
+        // until the finger lifts, wherever the finger wanders meanwhile.
+        let slid = {
+            let state = state.clone();
+            let on_move = on_move.clone();
+            let on_release = on_release.clone();
+            move |event: &ScrollWheelEvent, window: &mut Window, cx: &mut App| -> bool {
+                if !(TOUCH || window.last_input_was_touch()) {
+                    return false;
+                }
+                let ScrollDelta::Pixels(delta) = event.delta else {
+                    return false;
+                };
+                let along = match vertical {
+                    true => delta.y.abs() > delta.x.abs(),
+                    false => delta.x.abs() > delta.y.abs(),
+                };
+                let release = |position: Point<Pixels>, window: &mut Window, cx: &mut App| {
+                    state.touch.set(None);
+                    if let Some(release) = on_release.as_ref() {
+                        let up = MouseUpEvent {
+                            button: MouseButton::Left,
+                            position,
+                            ..MouseUpEvent::default()
+                        };
+                        release(&up, window, cx);
+                    }
+                };
+                match (event.touch_phase, state.touch.get()) {
+                    (TouchPhase::Started, _) => {
+                        let reach = state.bounds.get().dilate(TOUCH_REACH);
+                        if !along || !reach.contains(&event.position) {
+                            return false;
+                        }
+                        state.touch.set(Some(event.position));
+                    }
+                    // a fling carries on from where the finger lifted, so a move that stays put
+                    // means the finger is already off the glass
+                    (TouchPhase::Moved, Some(last)) if last == event.position => {
+                        release(event.position, window, cx);
+                        return true;
+                    }
+                    (TouchPhase::Moved, Some(_)) => state.touch.set(Some(event.position)),
+                    (TouchPhase::Ended | TouchPhase::Cancelled, Some(last)) => {
+                        release(last, window, cx);
+                        return true;
+                    }
+                    _ => return false,
+                }
+                if let Some(handler) = on_move.as_ref() {
+                    handler(&at(&state, event.position), window, cx);
+                }
+                true
             }
         };
 
@@ -509,9 +577,25 @@ impl RenderOnce for Scrubber {
                 |this| this.items_center().w_full().h(reach),
             )
             .child(
-                canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {})
-                    .absolute()
-                    .size_full(),
+                canvas(
+                    move |b, _, _| bounds.set(b),
+                    move |_, _, window, _| {
+                        if !enabled || !steps {
+                            return;
+                        }
+                        let slid = slid.clone();
+                        window.on_mouse_event(
+                            move |event: &ScrollWheelEvent, phase, window, cx| {
+                                // caught on the way down, so a list the slider sits in never scrolls
+                                if phase.capture() && slid(event, window, cx) {
+                                    cx.stop_propagation();
+                                }
+                            },
+                        );
+                    },
+                )
+                .absolute()
+                .size_full(),
             )
             .when(enabled, |this| {
                 this.cursor_pointer()
