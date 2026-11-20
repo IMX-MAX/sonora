@@ -20,10 +20,12 @@ use router::{
 };
 use state::{AppSettings, Leaving, Library, Origin, PinSort, Pins, Playback, Shelf, Sonora};
 
+use crate::shared::MOBILE;
 use crate::shared::menus::{ItemMenu, item_menu};
 use crate::shared::nav::{entry_shown, nav_icon, nav_row};
 use crate::shared::pins::leaving;
 use crate::shared::playlist_editor::{Edit, PlaylistEditor};
+use crate::shared::powerbar::Powerbar;
 
 /// The one drag list the pinned section keeps, so a pin dropped anywhere in it lands in order.
 const PINS: &str = "sidebar-pins";
@@ -717,8 +719,12 @@ impl SidebarLeft {
 
         row.lit(active, accent)
             .when(active, |button| button.aria_selected(true))
-            .on_click(move |_, _, cx| match destination.in_settings() {
+            .on_click(move |_, window, cx| match destination.in_settings() {
                 true => open_settings(cx),
+                // A phone searches from the quick search panel rather than the search page.
+                false if MOBILE && destination == Destination::Search => {
+                    Powerbar::toggle(window, cx)
+                }
                 false => navigate(destination.clone(), cx),
             })
             .into_any_element()

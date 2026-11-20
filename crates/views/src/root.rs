@@ -1432,7 +1432,14 @@ impl Render for Root {
             .on_action(cx.listener(|_, _: &NavigateBack, _, cx| back(cx)))
             .on_action(cx.listener(|_, _: &NavigateForward, _, cx| forward(cx)))
             .on_action(cx.listener(|this, _: &OpenFilter, window, cx| this.open_filter(window, cx)))
-            .on_action(cx.listener(|this, _: &OpenSearch, _, cx| this.open_search(cx)))
+            .on_action(cx.listener(|this, _: &OpenSearch, window, cx| {
+                // A phone searches from the quick search panel rather than the search page.
+                match crate::shared::MOBILE {
+                    true if !this.signing_in => Powerbar::toggle(window, cx),
+                    true => {}
+                    false => this.open_search(cx),
+                }
+            }))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .on_action(cx.listener(|this, _: &Refresh, _, cx| this.refresh(cx)))
             .on_action(cx.listener(|this, _: &ToggleFullscreen, _, cx| this.toggle_fullscreen(cx)))
