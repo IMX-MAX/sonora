@@ -1223,7 +1223,9 @@ impl Downloads {
                     }
                     Err(error) => log::warn!("downloads: cannot read the list: {error:#}"),
                 }
-                this.unsealed = this.session.read(cx).capabilities().plain_downloads;
+                // A phone keeps every download as a file, so the ones still sealed are rewritten too.
+                this.unsealed = this.session.read(cx).capabilities().plain_downloads
+                    || music::vault::PLAIN_DOWNLOADS;
                 this.unseal(cx);
                 this.pump(cx);
                 cx.emit(DownloadsChanged);

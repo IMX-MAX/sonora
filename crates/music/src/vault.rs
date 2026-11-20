@@ -81,6 +81,12 @@ const HEAD: usize = 64;
 /// milliseconds, so this only runs out while the keychain is prompting or stuck.
 const UNLOCK_WAIT: Duration = Duration::from_secs(5);
 
+/// Whether every provider but Spotify keeps its downloads as plain files, as on a phone, where a
+/// download should open as fast as a file can and never wait on the keystore. The files sit in
+/// the app's private storage, so no other app reads them either way. Spotify keeps its own
+/// format, since librespot plays its downloads itself.
+pub const PLAIN_DOWNLOADS: bool = cfg!(target_os = "android");
+
 /// Tells apart the temporary files of two recordings running at once in one process.
 static WRITES: AtomicU64 = AtomicU64::new(0);
 /// Whether keeping played tracks is on, for a player that keeps its own files and is set up
@@ -290,7 +296,7 @@ impl Vault {
             vault: self.clone(),
             provider,
             scope: String::new(),
-            plain: false,
+            plain: PLAIN_DOWNLOADS && provider != "spotify",
         }
     }
 
