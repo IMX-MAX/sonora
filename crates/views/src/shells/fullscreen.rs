@@ -24,6 +24,7 @@ use ui::{
 };
 
 use crate::chrome::{Aside, PlayerBar, TitleBarOptions};
+use crate::shared::MOBILE;
 use crate::shared::menus::ItemMenu;
 use crate::shared::transport::{
     COVER_FLIGHT, CoverFade, ShellSwap, clock_ems, end_clock, fraction, like, moved, transport,
@@ -1165,8 +1166,12 @@ impl FullscreenView {
             )
     }
 
-    fn sound(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        rising_volume(&self.volume, &self.playback, ambient::shown(cx), cx)
+    fn sound(&self, cx: &mut Context<Self>) -> AnyElement {
+        // phones keep Sonora at full volume and leave the level to the system's buttons
+        if MOBILE {
+            return gpui::Empty.into_any_element();
+        }
+        rising_volume(&self.volume, &self.playback, ambient::shown(cx), cx).into_any_element()
     }
 
     fn menu(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {

@@ -237,6 +237,10 @@ fn shifted(base: Duration, seconds: f64) -> Duration {
 
 /// The linear gain for a volume level, on a decibel taper that spans `TAPER_DB` and is silent
 /// at zero.
+/// Whether Sonora's own volume stays at full, as on phones, where the system volume is the one
+/// people turn.
+pub const FIXED_VOLUME: bool = cfg!(any(target_os = "android", target_os = "ios"));
+
 fn gain(level: f32) -> f32 {
     match level.clamp(0., 1.) {
         level if level <= 0. => 0.,
@@ -735,7 +739,10 @@ impl Playback {
         })
         .detach();
 
-        let level = settings.read(cx).volume();
+        let level = match FIXED_VOLUME {
+            true => 1.,
+            false => settings.read(cx).volume(),
+        };
         let normalisation = settings.read(cx).normalisation();
         let gapless = settings.read(cx).gapless();
         let transcode = settings.read(cx).transcode();
@@ -2704,8 +2711,11 @@ impl Playback {
             cx.notify();
             return;
         }
-        self.level = level.clamp(0., 1.);
-        if remember {
+        self.level = match FIXED_VOLUME {
+            true => 1.,
+            false => level.clamp(0., 1.),
+        };
+        if remember && !FIXED_VOLUME {
             self.settings
                 .update(cx, |settings, cx| settings.set_volume(self.level, cx));
         }
@@ -2721,6 +2731,9 @@ impl Playback {
         self.mute.volume_changed();
         self.sliding = Some(level);
         if self.steer(|_| Command::Volume(level), cx) {
+            return;
+        }
+        if FIXED_VOLUME {
             return;
         }
         self.level = level;

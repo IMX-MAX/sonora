@@ -21,6 +21,7 @@ use ui::{
 use crate::chrome::sessions_button::SessionsButton;
 use crate::chrome::timeline::Timeline;
 use crate::chrome::{Chrome, SidebarRight};
+use crate::shared::MOBILE;
 use crate::shared::menus::ItemMenu;
 use crate::shared::pins::Pinned as _;
 use crate::shared::transport::{
@@ -154,6 +155,10 @@ impl PlayerBar {
 
     /// The volume control, drawn the way `volume` says.
     fn sound(&self, volume: Volume, cx: &mut Context<Self>) -> AnyElement {
+        // phones keep Sonora at full volume and leave the level to the system's buttons
+        if MOBILE {
+            return gpui::Empty.into_any_element();
+        }
         match volume {
             Volume::Slider(width) => self.slider(width, cx).into_any_element(),
             Volume::Rising => {
