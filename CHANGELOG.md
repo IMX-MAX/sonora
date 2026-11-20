@@ -13,12 +13,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Choose Wide under Settings, Appearance, Page width to let pages fill a large window again instead of staying centred.
 - Swipe a song sideways in the queue on a touch screen to remove it, or hold it and drag it to a new place.
 - Search on Android opens quick search, as Ctrl+K does.
+- Downloads on Android go to Music/Sonora on the phone's storage, where file managers and other players find them, once Sonora is allowed All files access. Earlier downloads move there on their own.
+- Choose SF Pro Display under Settings, Appearance, Typeface in builds that carry it.
 
 ### Fixed
 
 - The remove button on queue songs shows and responds to taps on touch screens.
 - Holding a queue song on Android opens its menu only when you let go without dragging.
 - Downloads on Android are kept as plain files that play straight away, and earlier downloads are moved over on their own.
+- Sliders, the seek bar included, follow a finger dragged along them on touch screens instead of only jumping to a tap.
+- Sonora stays at full volume on phones, without its own volume slider or button, leaving the level to the phone's buttons.
+- The playback notification on Android goes away once nothing is left to play, can be swiped away while paused, and leaves on its own after ten minutes paused.
+- Music pauses on Android when headphones are unplugged or a Bluetooth headset disconnects.
+- Taps work again on Android after the keyboard closes, such as after picking a quick search result, and words typed with suggestions no longer repeat.
 - Music keeps playing smoothly on Windows while another program keeps the processor busy, without raising Sonora's priority in Task Manager.
 - The fullscreen player counts down the time left when Show time left is on, as the player bar does.
 - Clicking a song or other suggestion under the search page field opens it again instead of just closing the list.
