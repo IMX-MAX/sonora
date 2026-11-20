@@ -22,8 +22,27 @@ fn main() {
 fn fonts() {
     let assets = workspace().join("assets/fonts");
 
-    let faces = embed::folder(&assets, "ttf");
-    let embedded = embed::embedded(&faces, |item| format!("fonts/{}.ttf", item.name));
+    let mut faces = embed::folder(&assets, "ttf");
+    for face in &mut faces {
+        face.name = format!("{}.ttf", face.name);
+    }
+    // Fonts that may not be shared, such as SF Pro, are kept out of git in `local` and built in
+    // only when a copy has been put there.
+    let local = assets.join("local");
+    println!("cargo:rerun-if-changed={}", local.display());
+    if local.is_dir() {
+        for kind in ["ttf", "otf"] {
+            faces.extend(
+                embed::folder(&local, kind)
+                    .into_iter()
+                    .map(|face| embed::Item {
+                        name: format!("local/{}.{kind}", face.name),
+                        file: face.file,
+                    }),
+            );
+        }
+    }
+    let embedded = embed::embedded(&faces, |item| format!("fonts/{}", item.name));
     let source = format!("const FONTS: &[(&str, &[u8])] = {embedded};\n");
 
     let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets the output")).join("fonts.rs");

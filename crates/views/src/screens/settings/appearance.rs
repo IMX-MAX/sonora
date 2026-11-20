@@ -531,12 +531,21 @@ pub(super) fn usable_fonts(text_system: std::sync::Arc<gpui::TextSystem>) -> Vec
     names.sort_unstable();
     names.dedup();
 
+    // a bundled face, when this build carries one, leads the list right under the system font
+    if let Some(at) = names.iter().position(|name| name == BUNDLED_FACE) {
+        let face = names.remove(at);
+        names.insert(0, face);
+    }
+
     names
         .into_iter()
         .filter(|name| !name.starts_with('.'))
         .map(SharedString::from)
         .collect()
 }
+
+/// SF Pro Display, built in when a local copy sat in `assets/fonts/local` at build time.
+const BUNDLED_FACE: &str = "SF Pro Display";
 
 /// The top left corner of a surface drawn at `rounding`'s radius, the rest of it cut off by
 /// the thumbnail.

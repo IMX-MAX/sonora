@@ -10,3 +10,5 @@ __pycache__/
 /flatpak/*.flatpak
 /flatpak/flatpak
 /.flatpak-builder
+# fonts that may not be shared, built in only from a local copy
+/assets/fonts/local
