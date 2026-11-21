@@ -41,6 +41,17 @@ pub(crate) use ui::effects;
 /// Whether this is a phone build, where touch is the only input and the layout is the narrow one.
 pub(crate) const MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
 
+/// How much of the window's bottom edge the system draws over, such as a phone's gesture bar.
+/// The bars along the bottom paint through it and keep their controls above it. It is nothing
+/// while the keyboard is up, since the keyboard covers that strip and the root ends above it.
+pub(crate) fn bottom_inset(window: &gpui::Window) -> gpui::Pixels {
+    let insets = window.insets();
+    match insets.ime.bottom > gpui::Pixels::ZERO {
+        true => gpui::Pixels::ZERO,
+        false => ui::snapped(insets.safe_area.bottom, window),
+    }
+}
+
 /// The brand colours of the providers' marks.
 const SPOTIFY: u32 = 0x1ed760;
 const YOUTUBE: u32 = 0xff0033;

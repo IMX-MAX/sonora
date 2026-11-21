@@ -555,7 +555,7 @@ impl PlayerBar {
     pub(crate) fn fullscreen_drop(window: &Window, cx: &gpui::App) -> Pixels {
         let theme = *cx.theme();
         let layout = Sonora::global(cx).settings.read(cx).player_bar_layout();
-        let spare = theme.metrics.player_bar - Self::height(window, cx);
+        let spare = theme.metrics.player_bar - Self::controls_height(window, cx);
         let drop = match Self::stacked(window, layout) {
             // The button's row is centred under the cover's row and the gap between the two.
             true => spare + theme.metrics.row + window.rem_size() * STACK_GAP,
@@ -564,8 +564,14 @@ impl PlayerBar {
         ui::snapped((drop / 2.).max(Pixels::ZERO), window)
     }
 
-    /// The height the workspace reserves, shared by the overlay's bottom scroll clearance.
+    /// The height the workspace reserves, shared by the overlay's bottom scroll clearance. It
+    /// reaches the window's bottom edge, under whatever the system draws there.
     pub(crate) fn height(window: &Window, cx: &gpui::App) -> Pixels {
+        Self::controls_height(window, cx) + crate::shared::bottom_inset(window)
+    }
+
+    /// The height of the part of the bar that holds its controls.
+    fn controls_height(window: &Window, cx: &gpui::App) -> Pixels {
         let theme = *cx.theme();
         let layout = Sonora::global(cx).settings.read(cx).player_bar_layout();
         let height = match (Self::stacked(window, layout), layout) {
@@ -620,19 +626,19 @@ impl Render for PlayerBar {
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
         let radius: Option<Pixels> = None;
 
-        let base = div()
+        // The surface runs to the bottom of the window while the controls end above the
+        // system's bar there.
+        let surface = div()
             .id("player-bar")
             .role(Role::Toolbar)
             .aria_label(t!("settings-page-player-bar"))
+            .relative()
             .flex()
+            .flex_col()
             .w_full()
             .h(height)
             .flex_none()
-            .map(|this| match stacked && !span.fits(Room::Roomy) {
-                true => this.px_3(),
-                false => this.px_5(),
-            })
-            .when(stacked, |this| this.py_2())
+            .pb(crate::shared::bottom_inset(window))
             .when_some(radius, |this, radius| this.rounded_b(radius))
             .when_else(
                 transparent,
@@ -643,6 +649,17 @@ impl Render for PlayerBar {
             .border_color(theme.border)
             .occlude()
             .on_mouse_move(cx.listener(Self::hover));
+
+        let base = div()
+            .flex()
+            .w_full()
+            .flex_1()
+            .min_h_0()
+            .map(|this| match stacked && !span.fits(Room::Roomy) {
+                true => this.px_3(),
+                false => this.px_5(),
+            })
+            .when(stacked, |this| this.py_2());
 
         let context_menu = self.context_menu.clone().map(|(track, position)| {
             Popup::new(position, self.track_menu.for_track(&track, cx)).on_close(cx.listener(
@@ -776,8 +793,8 @@ impl Render for PlayerBar {
             }
         };
 
-        content
-            .relative()
+        surface
+            .child(content)
             .when_some(context_menu, |this, menu| this.child(menu))
     }
 }

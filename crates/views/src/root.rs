@@ -1318,11 +1318,12 @@ impl Render for Root {
             RootView::Workspace => self.shells.workspace.clone().into_any_element(),
             RootView::Fullscreen => self.shells.fullscreen.clone().into_any_element(),
         };
+        let keyboard = window.insets().ime.bottom;
         let insets = window.insets().effective();
         // How far above the bottom of the window the toasts hang.
         let floor = match self.view {
             RootView::Workspace => PlayerBar::height(window, cx),
-            RootView::Fullscreen => FullscreenView::dock_height(cx),
+            RootView::Fullscreen => FullscreenView::dock_height(window, cx),
         };
         // While fullscreen opens, the workspace it leaves fades out under it, and nothing in it
         // answers the pointer.
@@ -1498,10 +1499,11 @@ impl Render for Root {
                 ),
             )
             .when(!show_sign_in, |this| this.child(shell))
-            .when(
-                !show_sign_in && insets.bottom > gpui::Pixels::ZERO,
-                |this| this.child(div().w_full().h(insets.bottom).flex_none()),
-            );
+            // Only the keyboard ends the shells early. They draw under the system's own bar along
+            // the bottom and keep their controls clear of it themselves.
+            .when(!show_sign_in && keyboard > gpui::Pixels::ZERO, |this| {
+                this.child(div().w_full().h(keyboard).flex_none())
+            });
         // A closed menu or dialog fades out here, over everything else in the window.
         let root = root.child(ui::lingers());
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]

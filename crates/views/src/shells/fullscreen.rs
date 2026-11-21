@@ -177,8 +177,8 @@ impl VolumeHost for FullscreenView {
 
 impl FullscreenView {
     /// The height the dock along the bottom is given, which the toasts hang above.
-    pub(crate) fn dock_height(cx: &App) -> Pixels {
-        cx.theme().metrics.player_bar * DOCK_FULL
+    pub(crate) fn dock_height(window: &Window, cx: &App) -> Pixels {
+        cx.theme().metrics.player_bar * DOCK_FULL + shared::bottom_inset(window)
     }
 
     pub fn new(playback: Entity<Playback>, queue: Entity<Queue>, cx: &mut Context<Self>) -> Self {
@@ -1216,7 +1216,7 @@ impl FullscreenView {
             .id("fullscreen-corner")
             .occlude()
             .absolute()
-            .bottom(-drop)
+            .bottom(shared::bottom_inset(window) - drop)
             .right_5()
             .h(snapped(theme.metrics.player_bar, window))
             .flex()
@@ -1363,7 +1363,8 @@ impl Render for FullscreenView {
         let deck = px(SEEK_MAX).min(column).max(Pixels::ZERO);
         // The page ends as much nearer the window's bottom edge as the corner sits lower, so
         // the transport along the bottom stays level with the corner.
-        let foot = rem * PAGE_PAD + px(DECK_LIFT) - PlayerBar::fullscreen_drop(window, cx);
+        let foot = rem * PAGE_PAD + px(DECK_LIFT) - PlayerBar::fullscreen_drop(window, cx)
+            + shared::bottom_inset(window);
         let stack = theme.metrics.title_bar + rem * (COLUMN_GAP * 2.) + foot + meta;
         // The dock reserves the cap it clamps itself to while fading, and nothing at all once
         // it is hidden, which is the whole difference between the awake and the resting fit.
