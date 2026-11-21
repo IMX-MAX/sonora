@@ -1,18 +1,18 @@
 use std::rc::Rc;
 
 use ui::{
-    ActiveTheme as _, Card, Deck, DraggedPin, Edge, MenuItem, Panel, Picker, Pin, PinKind,
+    ActiveTheme as _, Card, Deck, DraggedPin, Edge, MenuItem, Motion, Panel, Picker, Pin, PinKind,
     Pinnable as _, Popup, SNUG, Scroller, Shield, Side, Spot, Text, Vacancy, drop_gap, drop_into,
     drop_marker,
 };
 
 use gpui::accesskit::Role;
 use gpui::prelude::*;
+use gpui::{AnimationExt as _, Window, div, point, px};
 use gpui::{
     AnyElement, App, Context, DragMoveEvent, Entity, FontWeight, MouseButton, MouseDownEvent,
     Pixels, Point, Render, ScrollHandle, SharedString, svg,
 };
-use gpui::{Window, div, px};
 use music::Shape;
 use router::{
     Destination, LibraryTab, NavEntry, Navigation, NavigationEvent, SettingsPage, navigate,
@@ -89,6 +89,12 @@ pub(crate) struct SidebarLeft {
     settings: Entity<AppSettings>,
     trail: Entity<Navigation>,
     width: Pixels,
+    /// Whether the last frame drew the sidebar open, and how many times it has opened since,
+    /// which keys the slide it opens with.
+    shown: bool,
+    /// Whether a frame has been drawn yet.
+    adapted: bool,
+    openings: usize,
     open: bool,
     /// Whether the listener folded the sidebar down to the rail.
     rail: bool,
@@ -152,6 +158,9 @@ impl SidebarLeft {
             settings,
             trail,
             width,
+            shown: false,
+            adapted: false,
+            openings: 0,
             open,
             rail,
             rail_width: Pixels::ZERO,
@@ -814,6 +823,16 @@ impl Render for SidebarLeft {
 
         let overlaid = self.overlays();
         let rail = self.folded();
+        let open = self.is_open();
+        // The first frame draws a sidebar that was already open, so only a later opening slides.
+        if open && !self.shown && self.adapted {
+            self.openings += 1;
+        }
+        self.shown = open;
+        self.adapted = true;
+        let travel = self.breadth();
+        let sliding =
+            (self.openings > 0 && open && ui::motion::animates(cx)).then_some(self.openings);
         // The edge drags past the rail to zero, so a drag can close the sidebar.
         let panel = Panel::new("sidebar-left", Side::Left, self.breadth())
             .limits(Pixels::ZERO, MAX_WIDTH)
@@ -894,9 +913,25 @@ impl Render for SidebarLeft {
                     ),
             )
             .children(self.menu(cx));
+        let panel = match sliding {
+            Some(opening) => panel
+                .with_animation(
+                    ("sidebar-left-opening", opening),
+                    // Slow off the edge, quick through the middle and slow into place.
+                    gpui::Animation::new(Motion::Slow.span())
+                        .with_easing(ui::motion::ease_in_out_cubic),
+                    move |panel, shown| {
+                        panel
+                            .layer_translate(point(travel * (shown - 1.), Pixels::ZERO))
+                            .opacity(shown.clamp(0., 1.))
+                    },
+                )
+                .into_any_element(),
+            None => panel.into_any_element(),
+        };
 
         match overlaid {
-            false => panel.into_any_element(),
+            false => panel,
             true => div()
                 .absolute()
                 .top_0()
