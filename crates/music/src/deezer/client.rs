@@ -740,9 +740,10 @@ impl DeezerClient {
             )
             .await
             .ok()?;
+        let about = page.get("BIO")?;
         ["BIO", "RESUME"]
             .into_iter()
-            .filter_map(|field| wire::text(&page, &["BIO", field]))
+            .filter_map(|field| wire::text(about, &[field]))
             .map(wire::prose)
             .find(|text| !text.is_empty())
     }
