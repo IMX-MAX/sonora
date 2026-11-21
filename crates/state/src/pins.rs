@@ -138,7 +138,7 @@ impl Pins {
     pub fn entries(&self, cx: &App) -> Rc<Vec<Pin>> {
         self.laid
             .get_or_init(|| {
-                let slugs = self.session.read(cx).active_slugs();
+                let slugs = self.session.read(cx).pinned_slugs();
                 let mut pinned = self.settings.read(cx).pinned(&slugs);
                 self.lay_out(&mut pinned, cx);
                 Rc::new(pinned)
@@ -218,7 +218,7 @@ impl Pins {
 
     /// The pins in the order they are stored in, whatever the current sort shows.
     fn dragged(&self, cx: &App) -> Vec<Pin> {
-        let slugs = self.session.read(cx).active_slugs();
+        let slugs = self.session.read(cx).pinned_slugs();
         self.settings.read(cx).pinned(&slugs)
     }
 
@@ -291,7 +291,7 @@ impl Pins {
             None if known => return,
             None => {}
         }
-        let slugs = self.session.read(cx).active_slugs();
+        let slugs = self.session.read(cx).pinned_slugs();
         self.settings.update(cx, |settings, cx| {
             settings.pin(slug, pin.clone(), gap, &slugs, cx)
         });
@@ -346,7 +346,7 @@ impl Pins {
             return;
         }
         let session = self.session.read(cx);
-        let slugs = session.active_slugs();
+        let slugs = session.pinned_slugs();
         if session.slug_for(&pin.id) != Some(slug) || !slugs.contains(&slug) {
             return;
         }
@@ -387,7 +387,7 @@ impl Pins {
             return;
         }
         let shown = self.entries(cx);
-        let slugs = self.session.read(cx).active_slugs();
+        let slugs = self.session.read(cx).pinned_slugs();
         self.settings.update(cx, |settings, cx| {
             settings.rearrange(&shown, &slugs, cx);
             settings.set_sidebar_pin_sort(None, false, cx);
@@ -407,7 +407,7 @@ impl Pins {
                 false => self.unpinned = Some((toast, unpinned)),
             }
         }
-        let slugs = self.session.read(cx).active_slugs();
+        let slugs = self.session.read(cx).pinned_slugs();
         self.settings.update(cx, |settings, cx| match attempted {
             true => settings.unpin(slug, &pin, cx),
             false => settings.pin(slug, pin, None, &slugs, cx),
@@ -461,7 +461,7 @@ impl Pins {
             return;
         }
         let session = self.session.read(cx);
-        let slugs = session.active_slugs();
+        let slugs = session.pinned_slugs();
         let held = self.settings.read(cx).pinned(&slugs);
         let known = |pin: &Pin| held.iter().any(|known| known.same(pin));
         let arrived: Vec<_> = now

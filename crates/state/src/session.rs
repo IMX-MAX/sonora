@@ -391,6 +391,16 @@ impl Session {
         self.local_provider.slug()
     }
 
+    /// The providers whose pins the sidebar lists: the live ones, and the stored account while
+    /// it is only out of reach, so going offline does not empty the pinned list.
+    pub fn pinned_slugs(&self) -> Vec<&'static str> {
+        let mut slugs = self.active_slugs();
+        if self.client.is_none() && matches!(self.state, SessionState::Offline(_)) {
+            slugs.splice(0..0, self.provider_slug());
+        }
+        slugs
+    }
+
     pub fn active_slugs(&self) -> Vec<&'static str> {
         let mut slugs = Vec::new();
         if self.client.is_some() {
