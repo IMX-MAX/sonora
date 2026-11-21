@@ -45,7 +45,7 @@ const DEVICE_NAMES: [&str; 22] = [
 ];
 /// The bundled themes in the order the Appearance page lists them. A bundled file missing here
 /// sorts after these by id.
-const ORDER: [&str; 15] = [
+const ORDER: [&str; 25] = [
     "catppuccin/latte",
     "catppuccin/frappe",
     "catppuccin/macchiato",
@@ -61,6 +61,16 @@ const ORDER: [&str; 15] = [
     "solarized/light",
     "nord",
     "dracula",
+    "tokyo-night/night",
+    "tokyo-night/storm",
+    "tokyo-night/day",
+    "everforest/dark",
+    "everforest/light",
+    "one-dark",
+    "kanagawa",
+    "monokai",
+    "oled",
+    "pink",
 ];
 
 /// The bundled themes, parsed once and sorted by `ORDER`.
