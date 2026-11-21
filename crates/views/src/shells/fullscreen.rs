@@ -27,7 +27,8 @@ use crate::chrome::{Aside, PlayerBar, TitleBarOptions};
 use crate::shared::MOBILE;
 use crate::shared::menus::ItemMenu;
 use crate::shared::transport::{
-    COVER_FLIGHT, CoverFade, ShellSwap, clock_ems, end_clock, fraction, like, moved, transport,
+    COVER_FLIGHT, CoverFade, ShellSwap, clock_ems, end_clock, fraction, like, moved,
+    touch_transport, transport,
 };
 use crate::shared::visualizer::VisualizerDrive;
 use crate::shared::volume::{
@@ -59,12 +60,14 @@ const PAGE_SIDE: f32 = 2.;
 const ROW_GAP: f32 = 2.;
 const DOCK: f32 = 1.15;
 const DOCK_FULL: f32 = 1.7;
+/// The dock's share of a player bar's height below `Room::Wide`, where the seek bar, its
+/// clocks, the transport and the corner each take a row.
+const DOCK_STACKED: f32 = 2.5;
 const SINK: f32 = 24.;
 /// The name the seek bar with the transport is seen under, so it slides to where a panel
 /// moves it.
 const DECK_FLIGHT: &str = "fullscreen-deck";
-/// The space between the pill and the leave button in the corner, and between the transport and
-/// the volume where the volume follows it.
+/// The space between the corner's items.
 const CORNER_GAP: f32 = 8.;
 /// A closed panel fading out, a little quicker than one comes in.
 const PANEL_LEAVE: SpringConfig = ui::spring(0.24, 0.);
@@ -100,7 +103,12 @@ const SHADOW_BLEED: f32 = TEXT_SHADOW[1] * 3.;
 const DOCK_BLUR: Pixels = px(8.);
 /// Below this the dock's blur is not worth a layer of its own.
 const DOCK_BLUR_LEAST: Pixels = px(0.05);
-const REST: Duration = Duration::from_millis(1000);
+/// How long the controls stay up after the last touch or pointer move. A finger has no hover
+/// to hold them, so a phone gives it time to reach a button.
+const REST: Duration = Duration::from_millis(match MOBILE {
+    true => 4000,
+    false => 1000,
+});
 const WAKE_DEBOUNCE: Duration = Duration::from_millis(400);
 /// How far the pointer has to travel, in pixels, before it wakes the controls, so the drift a
 /// resting hand gives a trackpad or a sensitive mouse leaves them asleep.
@@ -160,9 +168,6 @@ pub struct FullscreenView {
     /// The height the controls take with nothing clamping them, measured a frame ago. The dock
     /// shrinks from it while it fades, so the column moves in step with the cover.
     dock_natural: Rc<Cell<Pixels>>,
-    /// How wide the corner drew with everything in it, measured a frame ago. Below `Room::Wide`
-    /// the seek bar shares the corner's row and ends this far from it.
-    corner_width: Rc<Cell<Pixels>>,
 }
 
 impl VolumeHost for FullscreenView {
@@ -178,7 +183,11 @@ impl VolumeHost for FullscreenView {
 impl FullscreenView {
     /// The height the dock along the bottom is given, which the toasts hang above.
     pub(crate) fn dock_height(cx: &App) -> Pixels {
-        cx.theme().metrics.player_bar * DOCK_FULL
+        cx.theme().metrics.player_bar
+            * match MOBILE {
+                true => DOCK_STACKED,
+                false => DOCK_FULL,
+            }
     }
 
     pub fn new(playback: Entity<Playback>, queue: Entity<Queue>, cx: &mut Context<Self>) -> Self {
@@ -252,7 +261,6 @@ impl FullscreenView {
             leaving: None,
             meta_bounds: Rc::new(Cell::new(Bounds::default())),
             dock_natural: Rc::new(Cell::new(Pixels::ZERO)),
-            corner_width: Rc::new(Cell::new(Pixels::ZERO)),
         }
     }
 
@@ -869,18 +877,20 @@ impl FullscreenView {
             // end the way the stacked player bar does. The buttons go with the controls.
             .when(hide < 1., |this| {
                 this.child(
-                    self.transport_row("fullscreen-strip-transport", false, cx)
+                    self.transport_row("fullscreen-strip-transport", false, false, cx)
                         .flex_none()
                         .opacity(1. - hide),
                 )
             })
     }
 
-    /// The transport buttons in a row that tells the view while the pointer is over it.
+    /// The transport buttons in a row that tells the view while the pointer is over it. A
+    /// `spread` row is the narrow screen's own: touch-sized buttons across its whole width.
     fn transport_row(
         &self,
         id: &'static str,
         big: bool,
+        spread: bool,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         div()
@@ -891,14 +901,22 @@ impl FullscreenView {
                 this.over_transport = *hovering;
                 cx.notify();
             }))
-            .child(transport(&self.playback, big, cx))
+            .map(|this| match spread {
+                true => this.child(touch_transport(&self.playback, cx)),
+                false => this.child(transport(&self.playback, big, cx)),
+            })
     }
 
-    fn seek(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The seek bar and its two clocks. In a row the clocks stand at the bar's ends. `stacked`,
+    /// the bar takes the whole width and the clocks sit under its ends, larger and at the
+    /// foreground's quiet shade, which is how a narrow screen shows it.
+    fn seek(&self, stacked: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
-        let muted = theme.muted_foreground;
-        let empty = muted.opacity(0.3);
-        let text = theme.text(Text::Tiny);
+        let empty = theme.muted_foreground.opacity(0.3);
+        let (muted, text) = match stacked {
+            true => (shared::quiet(&theme), theme.text(Text::Small)),
+            false => (theme.muted_foreground, theme.text(Text::Tiny)),
+        };
         let playback = self.playback.read(cx);
         let seekable = playback.shown_track(cx).is_some();
         let (elapsed, total) = playback.shown_time(cx);
@@ -922,49 +940,57 @@ impl FullscreenView {
                 .when_else(align_end, |this| this.text_right(), |this| this.text_left())
         };
 
-        div()
+        let elapsed_clock = label("fullscreen-elapsed", clock(elapsed), !stacked);
+        let total_clock = label("fullscreen-total", end.text, stacked)
+            .when_some(end.spoken, |this, spoken| this.aria_value(spoken));
+        let bar = Scrubber::new(&self.seek, progress)
+            .name(t!("song-position"))
+            .value(clock(elapsed))
+            .colors(theme.progress_bar, empty, theme.foreground)
+            .ranges(
+                Sonora::global(cx).sponsorblock.read(cx).ranges(cx),
+                theme.foreground.opacity(0.4),
+            )
+            .enabled(seekable)
+            .when_some(bubble, |this, (at, text)| this.bubble(at, text))
+            .on_move(cx.listener(|this, fraction: &f32, _, cx| {
+                this.pending = Some(*fraction);
+                cx.notify();
+            }))
+            .on_release(cx.listener(|this, _: &MouseUpEvent, _, cx| this.commit_seek(cx)));
+        let seek = div()
             .id("fullscreen-seek")
             .role(Role::Group)
             .aria_label(t!("song-position"))
             .flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .child(label("fullscreen-elapsed", clock(elapsed), true))
-            .child(
-                div().flex_1().min_w_0().child(
-                    Scrubber::new(&self.seek, progress)
-                        .name(t!("song-position"))
-                        .value(clock(elapsed))
-                        .colors(theme.progress_bar, empty, theme.foreground)
-                        .ranges(
-                            Sonora::global(cx).sponsorblock.read(cx).ranges(cx),
-                            theme.foreground.opacity(0.4),
-                        )
-                        .enabled(seekable)
-                        .when_some(bubble, |this, (at, text)| this.bubble(at, text))
-                        .on_move(cx.listener(|this, fraction: &f32, _, cx| {
-                            this.pending = Some(*fraction);
-                            cx.notify();
-                        }))
-                        .on_release(
-                            cx.listener(|this, _: &MouseUpEvent, _, cx| this.commit_seek(cx)),
-                        ),
-                ),
-            )
-            .child(
-                label("fullscreen-total", end.text, false)
-                    .when_some(end.spoken, |this, spoken| this.aria_value(spoken)),
-            )
+            .w_full();
+
+        match stacked {
+            true => seek.flex_col().child(bar).child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .w_full()
+                    .child(elapsed_clock)
+                    .child(total_clock),
+            ),
+            false => seek
+                .items_center()
+                .gap_2()
+                .child(elapsed_clock)
+                .child(div().flex_1().min_w_0().child(bar))
+                .child(total_clock),
+        }
     }
 
     /// The seek bar and the transport. From `Room::Wide` up they stack in the middle, the
     /// transport under the seek bar with the volume at the row's right end. A narrower window
-    /// has no room for that row beside the corner, so the controls lie the way the stacked
-    /// player bar does: the transport on a row of its own, and the seek bar along the bottom,
-    /// level with the corner and ending short of it. With a panel open the strip above
-    /// carries the transport instead, and the corner takes the volume. Centred controls are at
-    /// most `deck` wide, so they keep one width whether they sit in the column or at the bottom.
+    /// is a phone held upright, so everything takes the whole width, a row each: the seek
+    /// bar over its clocks, the transport spread out under it, and a row left empty at the
+    /// bottom for the corner to stand in. With a panel open the strip above carries the
+    /// transport instead. Centred controls are at most `deck` wide, so they keep one width
+    /// whether they sit in the column or at the bottom.
     fn controls(
         &self,
         room: Room,
@@ -976,8 +1002,8 @@ impl FullscreenView {
         let centred = room.fits(Room::Wide);
         let stack = div().flex().flex_col().items_center().gap_3().w_full();
         let stack = match centred {
-            true => stack.child(self.seek(cx)).child(
-                self.transport_row("fullscreen-transport", true, cx)
+            true => stack.child(self.seek(false, cx)).child(
+                self.transport_row("fullscreen-transport", true, false, cx)
                     .relative()
                     .w_full()
                     .justify_center()
@@ -992,26 +1018,15 @@ impl FullscreenView {
                             .child(self.sound(cx)),
                     ),
             ),
-            false => {
-                let clear = self.corner_width.get() + px(CORNER_GAP) * 2.;
-                stack
-                    .when(self.panel.is_none(), |this| {
-                        this.child(
-                            self.transport_row("fullscreen-transport", true, cx)
-                                .w_full()
-                                .justify_center(),
-                        )
-                    })
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .w_full()
-                            .h(theme.metrics.control_small)
-                            .pr(clear)
-                            .child(self.seek(cx)),
+            false => stack
+                .child(self.seek(true, cx))
+                .when(self.panel.is_none(), |this| {
+                    this.child(
+                        self.transport_row("fullscreen-transport", true, true, cx)
+                            .w_full(),
                     )
-            }
+                })
+                .child(div().flex_none().h(theme.metrics.control)),
         };
 
         div()
@@ -1098,7 +1113,9 @@ impl FullscreenView {
             })
     }
 
-    fn pill(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The tabs that pick what shows beside the cover. A `touch` pill is the narrow screen's:
+    /// full-size buttons whose resting icons take the foreground's quiet shade.
+    fn pill(&self, touch: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let frosted = ambient::shown(cx);
         let lyrics = self.settings.read(cx).lyrics_enabled();
@@ -1116,14 +1133,15 @@ impl FullscreenView {
             Button::new(id)
                 .ghost()
                 .when(frosted, Button::frosted)
-                .small()
+                .when(!touch, Button::small)
                 .icon(icon)
                 .tooltip_above(hint)
                 .selected(showing)
                 .rounded(theme.radius)
-                .tint(match showing {
-                    true => theme.foreground,
-                    false => theme.muted_foreground,
+                .tint(match (showing, touch) {
+                    (true, _) => theme.foreground,
+                    (false, true) => shared::quiet(&theme),
+                    (false, false) => theme.muted_foreground,
                 })
                 .on_click(cx.listener(move |this, _, _, cx| this.show(panel, cx)))
         };
@@ -1189,9 +1207,10 @@ impl FullscreenView {
 
     /// The bottom right corner: the pill that picks what shows beside the cover, and the leave
     /// button, in one row that never moves with the layout, so a panel coming or going
-    /// leaves the pill under the pointer that switched it. The row is centred on a player bar's
-    /// height, lowered by as much as the chrome player bar lowers its own fullscreen button in
-    /// the layout it has at this width, so that button and the leave button share one spot. The pill sinks and fades
+    /// leaves the pill under the pointer that switched it. From `Room::Wide` up the row is
+    /// centred on a player bar's height, lowered by as much as the chrome player bar lowers its
+    /// own fullscreen button, so that button and the leave button share one spot. Narrower, it
+    /// is the bottom row of the controls, as wide as the page. The pill sinks and fades
     /// with the controls. The leave button follows the idle spring instead, so a
     /// pointer move still brings it back when the controls are set to stay hidden. While the
     /// player opens the leave button paints above its fade and zoom, and while it closes the
@@ -1209,16 +1228,26 @@ impl FullscreenView {
         let sunk = |element: Div, by: f32| element.relative().top(px(SINK) * by).opacity(1. - by);
         let drop = PlayerBar::fullscreen_drop(window, cx);
         let narrow = !Room::of(window.viewport_size().width).fits(Room::Wide);
-        let width = self.corner_width.clone();
         let swap = cx.try_global::<ShellSwap>().copied().unwrap_or_default();
 
         div()
             .id("fullscreen-corner")
             .occlude()
             .absolute()
-            .bottom(-drop)
             .right_5()
-            .h(snapped(theme.metrics.player_bar, window))
+            // Below `Room::Wide` the corner is the whole bottom row, the one the controls
+            // leave empty above the page's foot, with the pill in its middle and the leave
+            // button at its end.
+            .map(|this| match narrow {
+                true => this
+                    .left_5()
+                    .justify_center()
+                    .bottom(window.rem_size() * PAGE_PAD + px(DECK_LIFT) - drop)
+                    .h(theme.metrics.control),
+                false => this
+                    .bottom(-drop)
+                    .h(snapped(theme.metrics.player_bar, window)),
+            })
             .flex()
             .items_center()
             .gap(px(CORNER_GAP))
@@ -1226,31 +1255,19 @@ impl FullscreenView {
                 this.over_leave = *hovering;
                 cx.notify();
             }))
-            // The seek bar reads how wide the whole corner is, so only a corner with everything
-            // in it says.
-            .when(hide < 1. && idle < 1., |this| {
-                this.child(
-                    canvas(
-                        move |bounds, _, _| width.set(bounds.size.width),
-                        |_, _, _, _| {},
-                    )
-                    .absolute()
-                    .size_full(),
-                )
-            })
             // Below `Room::Wide` the transport row has no end to hold the volume, so it
             // stands here with the pill.
-            .when(narrow && hide < 1., |this| {
+            .when(narrow && !MOBILE && hide < 1., |this| {
                 this.child(sunk(div().child(self.sound(cx)), hide))
             })
             .when(hide < 1., |this| {
-                this.child(sunk(div().child(self.pill(cx)), hide))
+                this.child(sunk(div().child(self.pill(narrow, cx)), hide))
             })
             .when(idle < 1., |this| {
                 let leave = Button::new("leave-fullscreen")
                     .ghost()
                     .when(frosted, Button::frosted)
-                    .small()
+                    .when(!narrow, Button::small)
                     .icon("icons/minimize.svg")
                     .tooltip_above("player-fullscreen-leave")
                     .on_click(|_, window, cx| {
@@ -1261,7 +1278,20 @@ impl FullscreenView {
                     ShellSwap::Closing => leave.invisible().into_any_element(),
                     ShellSwap::Settled => leave.into_any_element(),
                 };
-                this.child(sunk(div().child(leave), idle))
+                let leave = sunk(div().child(leave), idle);
+                match narrow {
+                    true => this.child(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .bottom_0()
+                            .right_0()
+                            .flex()
+                            .items_center()
+                            .child(leave),
+                    ),
+                    false => this.child(leave),
+                }
             })
     }
 }
@@ -1368,9 +1398,10 @@ impl Render for FullscreenView {
         // The dock reserves the cap it clamps itself to while fading, and nothing at all once
         // it is hidden, which is the whole difference between the awake and the resting fit.
         let dock = theme.metrics.player_bar
-            * match split {
-                true => DOCK,
-                false => DOCK_FULL,
+            * match (split, room.fits(Room::Wide)) {
+                (true, _) => DOCK,
+                (false, true) => DOCK_FULL,
+                (false, false) => DOCK_STACKED,
             };
         let fit = |tall: f32, wide: f32, reserve: Pixels, ceiling: Pixels| {
             (viewport.height * tall)
@@ -1700,14 +1731,7 @@ impl Render for FullscreenView {
                 this.child(self.strip(hide, window, cx))
             })
             .when(!split, |this| {
-                this.child(self.dock(
-                    theme.metrics.player_bar * DOCK_FULL,
-                    hide,
-                    !staged,
-                    room,
-                    deck,
-                    cx,
-                ))
+                this.child(self.dock(dock, hide, !staged, room, deck, cx))
             })
             .when(idle < 1. || hide < 1., |this| {
                 this.child(self.corner(hide, idle, window, cx))

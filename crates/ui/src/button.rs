@@ -35,6 +35,8 @@ const GAP: Pixels = px(6.);
 const LARGE_INSET: Pixels = px(16.);
 const LARGE_GAP: Pixels = px(8.);
 const ICON: Pixels = px(16.);
+/// The icon of a button a finger aims at.
+const TOUCH_ICON: Pixels = px(24.);
 const BORDER: Pixels = px(1.);
 /// How small a swapped icon starts as it pops in.
 const POP_FROM: f32 = 0.6;
@@ -105,6 +107,8 @@ pub struct Button {
     small: bool,
     /// Whether the button stands as tall as a text field, as the answers of a dialog do.
     large: bool,
+    /// Whether the button is an icon a finger aims at: a square as tall as a row.
+    touch: bool,
     disabled: bool,
     selected: bool,
     /// Whether the menu or panel the button opens is showing, `None` for a button that opens
@@ -156,6 +160,7 @@ impl Button {
             variant: Variant::Ghost,
             small: false,
             large: false,
+            touch: false,
             disabled: false,
             selected: false,
             expanded: None,
@@ -280,6 +285,13 @@ impl Button {
     /// dialog and the buttons of a form.
     pub fn large(mut self) -> Self {
         self.large = true;
+        self
+    }
+
+    /// Makes an icon button a touch target: a square as tall as a row with a larger icon, for
+    /// the controls a phone's player leads with.
+    pub fn touch(mut self) -> Self {
+        self.touch = true;
         self
     }
 
@@ -480,6 +492,7 @@ impl RenderOnce for Button {
             variant,
             small,
             large,
+            touch,
             disabled,
             selected,
             expanded,
@@ -625,10 +638,15 @@ impl RenderOnce for Button {
                 (slot, shown)
             })
         });
-        let (height, padding, gap) = match (small, large) {
-            (true, _) => (theme.metrics.control_small, SMALL_INSET, px(4.)),
-            (false, true) => (theme.metrics.field, LARGE_INSET, LARGE_GAP),
-            (false, false) => (theme.metrics.control, INSET, GAP),
+        let (height, padding, gap) = match (touch, small, large) {
+            (true, ..) => (theme.metrics.row, Pixels::ZERO, GAP),
+            (false, true, _) => (theme.metrics.control_small, SMALL_INSET, px(4.)),
+            (false, false, true) => (theme.metrics.field, LARGE_INSET, LARGE_GAP),
+            (false, false, false) => (theme.metrics.control, INSET, GAP),
+        };
+        let icon_size = match touch {
+            true => TOUCH_ICON,
+            false => ICON,
         };
         let weight = large.then_some(FontWeight::MEDIUM);
         let (hover, active) = match interactive {
@@ -797,6 +815,7 @@ impl RenderOnce for Button {
             .gap(gap)
             .h(height)
             .px(padding)
+            .when(touch, |this| this.w(height))
             .rounded(radius)
             // Mid-resize the box is narrower or wider than what it holds, so the content keeps
             // its own width from the leading edge and the box clips it as it grows. It leaves the
@@ -860,6 +879,7 @@ impl RenderOnce for Button {
                         let left = 1. - moved;
                         let coming = glyph(
                             path.clone(),
+                            icon_size,
                             tinted(moved * moved),
                             turn,
                             popped(moved),
@@ -867,6 +887,7 @@ impl RenderOnce for Button {
                         );
                         let going = glyph(
                             path,
+                            icon_size,
                             tinted(left * left),
                             turn,
                             popped(left),
@@ -876,7 +897,7 @@ impl RenderOnce for Button {
                             div()
                                 .relative()
                                 .flex_none()
-                                .size(ICON)
+                                .size(icon_size)
                                 .child(coming)
                                 .child(going.absolute().top_0().left_0()),
                         )
@@ -886,15 +907,15 @@ impl RenderOnce for Button {
                         // one of the two is always whole.
                         let (shown, gone) = match blend {
                             true => (
-                                glyph(path, tinted(pop * 2.), turn, 1., still),
+                                glyph(path, icon_size, tinted(pop * 2.), turn, 1., still),
                                 leaving.map(|(old, left)| {
-                                    glyph(old, tinted(left * 2.), turn, 1., still)
+                                    glyph(old, icon_size, tinted(left * 2.), turn, 1., still)
                                 }),
                             ),
                             false => (
-                                glyph(path, tinted(pop), turn, popped(pop), still),
+                                glyph(path, icon_size, tinted(pop), turn, popped(pop), still),
                                 leaving.map(|(old, left)| {
-                                    glyph(old, tinted(left), turn, popped(left), still)
+                                    glyph(old, icon_size, tinted(left), turn, popped(left), still)
                                 }),
                             ),
                         };
@@ -903,7 +924,7 @@ impl RenderOnce for Button {
                                 div()
                                     .relative()
                                     .flex_none()
-                                    .size(ICON)
+                                    .size(icon_size)
                                     .child(shown)
                                     .child(gone.absolute().top_0().left_0()),
                             ),
@@ -1034,12 +1055,19 @@ impl RenderOnce for Button {
     }
 }
 
-/// The button's icon in `color`, turned by `turn` of a full turn, drawn at `scale` of its size
+/// The button's icon `side` across in `color`, turned by `turn` of a full turn, drawn at `scale` of its size
 /// and moved `shift` sideways from its place.
-fn glyph(path: SharedString, color: Hsla, turn: f32, scale: f32, shift: Pixels) -> Svg {
+fn glyph(
+    path: SharedString,
+    side: Pixels,
+    color: Hsla,
+    turn: f32,
+    scale: f32,
+    shift: Pixels,
+) -> Svg {
     svg()
         .path(icons::path(path))
-        .size(ICON)
+        .size(side)
         .flex_none()
         .text_color(color)
         .with_transformation(
