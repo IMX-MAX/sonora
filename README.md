@@ -168,7 +168,19 @@ on Windows on ARM.
 
 Download the latest `windows-msvc.exe` for your architecture from [Releases](https://github.com/sonorahq/sonora/releases/latest).
 
+### Android
+
+This tree builds the arm64 APK (`io.github.sonorahq.sonora`, 0.50.4-mobile). You need JDK 17, the Android SDK (platform 35, build-tools 35, NDK 27.2.12479018), and the Rust `aarch64-linux-android` target. Set `ANDROID_SDK_ROOT` and `JAVA_HOME`. Point `KEYSTORE` at a keystore whose sibling `.txt` file lists `store password:` and `alias:` — that file, and the keystore, stay out of git.
+
+```sh
+rustup target add aarch64-linux-android
+KEYSTORE=/path/to/sonora-debug.keystore ./android/build-apk.sh
+```
+
+The script writes `Sonora-mobile.apk` in the repo root by default, or to a path you pass as the second argument. The first argument is the repo root when you are building from a worktree. Vendored `vendor/gpui` and `vendor/android-activity` are patched in only for this build. SF Pro Display is embedded only when the font files are present in `assets/fonts/local`, which is gitignored.
+
 ### Nightly
+
 
 [Nightly builds](https://github.com/sonorahq/sonora/releases/tag/nightly) are available.
 

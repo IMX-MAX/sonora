@@ -1,0 +1,179 @@
+--- a/crates/gpui_android/src/gpui_android.rs	2026-11-20 11:38:23.671837439 -0500
++++ vendor/gpui/crates/gpui_android/src/gpui_android.rs	2026-11-20 12:07:22.400106048 -0500
+@@ -18,9 +18,9 @@
+     Action, ActivityGuard, AnyWindowHandle, AppLifecyclePhase, BackgroundExecutor, Bounds,
+     Capslock, ClipboardItem, CursorStyle, Decorations, DevicePixels, DispatchEventResult,
+     DisplayId, DummyKeyboardMapper, Edges, ForegroundExecutor, FrameRequestSource, GpuSpecs,
+-    HeadlessAtlas, KeyDownEvent, KeyUpEvent, Keymap, Keystroke, Menu, MenuItem, Modifiers,
+-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Platform, PlatformAtlas,
+-    PlatformDispatcher, PlatformDisplay, PlatformInput, PlatformInputHandler,
++    HeadlessAtlas, KeyDownEvent, KeyUpEvent, Keymap, Keystroke, LongPressEvent, Menu, MenuItem,
++    Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Platform,
++    PlatformAtlas, PlatformDispatcher, PlatformDisplay, PlatformInput, PlatformInputHandler,
+     PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem, PlatformWindow, Point,
+     Priority, PriorityQueueReceiver, PriorityQueueSender, PromptButton, PromptLevel,
+     RequestFrameOptions, RunnableVariant, Scene, ScrollDelta, ScrollWheelEvent, Size, Task,
+@@ -303,6 +303,8 @@
+     scroll_axis: Option<ScrollAxis>,
+     scrolling: bool,
+     long_pressed: bool,
++    /// Whether a view claimed the long press, so moves and the lift go to it as a `LongPress`.
++    long_press_claimed: bool,
+     fling: Option<FlingState>,
+ }
+ 
+@@ -319,6 +321,7 @@
+             scroll_axis: None,
+             scrolling: false,
+             long_pressed: false,
++            long_press_claimed: false,
+             fling: None,
+         }
+     }
+@@ -805,18 +808,34 @@
+     }
+ 
+     fn dispatch_input(&self, input: PlatformInput) {
+-        let window = self.state.borrow().window.clone();
+-        let Some(window) = window else {
+-            return;
+-        };
++        self.dispatch_input_result(input);
++    }
++
++    fn dispatch_input_result(&self, input: PlatformInput) -> Option<DispatchEventResult> {
++        let window = self.state.borrow().window.clone()?;
+         let callback = window.0.borrow_mut().callbacks.input.take();
+-        if let Some(mut callback) = callback {
+-            let _ = callback(input);
+-            let mut inner = window.0.borrow_mut();
+-            if inner.callbacks.input.is_none() {
+-                inner.callbacks.input = Some(callback);
+-            }
++        let mut callback = callback?;
++        let result = callback(input);
++        let mut inner = window.0.borrow_mut();
++        if inner.callbacks.input.is_none() {
++            inner.callbacks.input = Some(callback);
+         }
++        Some(result)
++    }
++
++    /// Offers a long press to the views, and returns whether one claimed it.
++    fn dispatch_long_press(
++        &self,
++        phase: TouchPhase,
++        start_position: Point<Pixels>,
++        position: Point<Pixels>,
++    ) -> bool {
++        self.dispatch_input_result(PlatformInput::LongPress(LongPressEvent {
++            phase,
++            start_position,
++            position,
++        }))
++        .is_some_and(|result| result.default_prevented)
+     }
+ 
+     fn handle_input_events(&self) {
+@@ -873,8 +892,15 @@
+                 return;
+             }
+             inner.touch.long_pressed = true;
+-            inner.touch.last_pos
++            (inner.touch.down_pos, inner.touch.last_pos)
+         };
++        let (start, pos) = pos;
++        // A view that claims the long press (by preventing default) follows the finger until it
++        // lifts; otherwise the long press opens the context menu as a right click.
++        if self.dispatch_long_press(TouchPhase::Started, start, pos) {
++            window.0.borrow_mut().touch.long_press_claimed = true;
++            return;
++        }
+         let offscreen = point(px(-10_000.0), px(-10_000.0));
+         self.dispatch_input(PlatformInput::MouseMove(MouseMoveEvent {
+             position: pos,
+@@ -932,6 +958,21 @@
+                 for _ in 0..n {
+                     self.dispatch_key_press("backspace", None);
+                 }
++            } else if event == "I:HIDDEN" {
++                // The keyboard went away. A touch it cut short never sends its lift, so start
++                // the next one from a clean slate rather than waiting on it.
++                let offscreen = point(px(-10_000.0), px(-10_000.0));
++                {
++                    let mut inner = window.0.borrow_mut();
++                    inner.touch = TouchTracker::default();
++                    inner.touch.last_pos = offscreen;
++                    inner.frame_requested.set(true);
++                }
++                self.dispatch_input(PlatformInput::MouseMove(MouseMoveEvent {
++                    position: offscreen,
++                    pressed_button: None,
++                    modifiers: Modifiers::default(),
++                }));
+             } else if let Some(key) = event.strip_prefix("K:") {
+                 let mapped = match key {
+                     "BACKSPACE" => Some("backspace"),
+@@ -999,6 +1040,7 @@
+                     inner.touch.scroll_axis = None;
+                     inner.touch.scrolling = false;
+                     inner.touch.long_pressed = false;
++                    inner.touch.long_press_claimed = false;
+                     fling
+                 };
+                 if let Some(fling) = cancelled_fling {
+@@ -1023,6 +1065,7 @@
+                 let (entered_scroll, delta, prev_scrolling, long_pressed) = {
+                     let mut inner = window.0.borrow_mut();
+                     if inner.touch.long_pressed {
++                        inner.touch.last_pos = pos;
+                         (false, Point::default(), false, true)
+                     } else {
+                         let now = Instant::now();
+@@ -1066,6 +1109,13 @@
+                     }
+                 };
+                 if long_pressed {
++                    let (claimed, start) = {
++                        let inner = window.0.borrow();
++                        (inner.touch.long_press_claimed, inner.touch.down_pos)
++                    };
++                    if claimed {
++                        self.dispatch_long_press(TouchPhase::Moved, start, pos);
++                    }
+                     return;
+                 }
+ 
+@@ -1088,6 +1138,15 @@
+                     let mut inner = window.0.borrow_mut();
+                     if inner.touch.active_pointer != Some(pointer_id) {
+                         (false, false, false, false, pos)
++                    } else if inner.touch.long_press_claimed {
++                        inner.touch.long_press_claimed = false;
++                        inner.touch.long_pressed = false;
++                        inner.touch.active_pointer = None;
++                        inner.touch.last_pos = offscreen;
++                        let start = inner.touch.down_pos;
++                        drop(inner);
++                        self.dispatch_long_press(TouchPhase::Ended, start, pos);
++                        return;
+                     } else {
+                         let scrolling = inner.touch.scrolling;
+                         let long_pressed = inner.touch.long_pressed;
+@@ -1170,6 +1229,16 @@
+                 let offscreen = point(px(-10_000.0), px(-10_000.0));
+                 let (was_active, was_scrolling) = {
+                     let mut inner = window.0.borrow_mut();
++                    if inner.touch.active_pointer.is_some() && inner.touch.long_press_claimed {
++                        inner.touch.active_pointer = None;
++                        inner.touch.long_press_claimed = false;
++                        inner.touch.long_pressed = false;
++                        inner.touch.last_pos = offscreen;
++                        let start = inner.touch.down_pos;
++                        drop(inner);
++                        self.dispatch_long_press(TouchPhase::Cancelled, start, pos);
++                        return;
++                    }
+                     if inner.touch.active_pointer.take().is_some() {
+                         let scrolling = inner.touch.scrolling;
+                         inner.touch.scrolling = false;
