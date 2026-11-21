@@ -2,7 +2,6 @@
 /result
 /.claude
 /.direnv
-/vendor
 __pycache__/
 /.idea
 /flatpak/flatpak-repo
@@ -12,3 +11,9 @@ __pycache__/
 /.flatpak-builder
 # fonts that may not be shared, built in only from a local copy
 /assets/fonts/local
+
+# Android signing material and built APKs, never commit
+*.keystore
+*.jks
+*.keystore.txt
+*.apk

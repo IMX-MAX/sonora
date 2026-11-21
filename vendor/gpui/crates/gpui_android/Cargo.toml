@@ -1,0 +1,26 @@
+[package]
+name = "gpui_android"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "Apache-2.0"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/gpui_android.rs"
+doctest = false
+
+[dependencies]
+android-activity = { version = "0.6.1", features = ["native-activity"] }
+anyhow.workspace = true
+futures.workspace = true
+gpui.workspace = true
+gpui_wgpu.workspace = true
+jni = "0.22"
+log.workspace = true
+ndk = "0.9"
+parking_lot.workspace = true
+raw-window-handle.workspace = true
+uuid.workspace = true
