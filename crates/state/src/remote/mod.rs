@@ -15,6 +15,12 @@ mod android;
 #[cfg(target_os = "android")]
 pub(crate) use android::save_to_music;
 
+/// Answers a press with a short haptic tick, where the device has one to give.
+pub fn haptic_tap() {
+    #[cfg(target_os = "android")]
+    android::haptic_tap();
+}
+
 /// Keeps the screen awake while `on`, where the system lets an app ask for that.
 pub fn keep_screen_on(on: bool) {
     #[cfg(target_os = "android")]

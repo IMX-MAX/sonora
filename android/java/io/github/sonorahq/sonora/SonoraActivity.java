@@ -131,6 +131,24 @@ public class SonoraActivity extends NativeActivity {
         });
     }
 
+    /** Answers a press with the system's short haptic tick, which follows the phone's own touch feedback setting. */
+    public static void hapticTap() {
+        final SonoraActivity act = sInstance;
+        if (act == null) {
+            return;
+        }
+        act.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    act.getWindow().getDecorView().performHapticFeedback(
+                            android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+                } catch (Throwable ignored) {
+                }
+            }
+        });
+    }
+
     /** Keeps the screen awake while `on` is not zero, and lets it sleep again otherwise. */
     public static void keepScreenOn(final int on) {
         final SonoraActivity act = sInstance;

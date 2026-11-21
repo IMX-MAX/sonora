@@ -36,7 +36,8 @@ impl SettingsView {
             Group::new("settings-group-motion", "icons/loader-circle.svg").rows(
                 [Slot::Motion, Slot::Pace]
                     .into_iter()
-                    .chain(cfg!(not(target_os = "android")).then_some(Slot::Saver)),
+                    .chain(cfg!(not(target_os = "android")).then_some(Slot::Saver))
+                    .chain(cfg!(target_os = "android").then_some(Slot::Haptics)),
             ),
         );
         groups.push(

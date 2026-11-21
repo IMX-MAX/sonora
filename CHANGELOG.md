@@ -10,6 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Deezer artist pages show the artist's biography.
+- On Android, presses answer with a short haptic tick, which Settings can turn off.
+- The about dialog of an artist opens with their picture across the top.
+- On a phone, the picture on an artist page trails behind as the page scrolls.
 - Swipe a song sideways in the queue on a touch screen to remove it, or hold it and drag it to a new place.
 - Search on Android opens quick search, as Ctrl+K does.
 - Save a song as an MP3 or M4A from its menu: hold it on a phone, right-click it on a desktop. The file goes to Music/Sonora, on the phone's shared storage or in your Music folder, with its title, artist, album and cover.

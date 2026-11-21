@@ -3141,6 +3141,13 @@ impl Interactivity {
 
                                 match btn {
                                     MouseButton::Left => {
+                                        if !click_listeners.is_empty()
+                                            && let Some(feedback) = cx
+                                                .try_global::<ClickFeedback>()
+                                                .map(|feedback| feedback.0.clone())
+                                        {
+                                            feedback(cx);
+                                        }
                                         for listener in &click_listeners {
                                             listener(&mouse_click, window, cx);
                                         }
@@ -4067,6 +4074,12 @@ fn handle_tooltip_check_visible_and_update(
 pub(crate) struct GroupHitboxes(HashMap<SharedString, SmallVec<[HitboxId; 1]>>);
 
 impl Global for GroupHitboxes {}
+
+/// What an app sets as a global to be told of every press that lands on a click listener, so
+/// it can answer the press with feedback of its own, such as a haptic tick on a phone.
+pub struct ClickFeedback(pub Rc<dyn Fn(&mut App)>);
+
+impl Global for ClickFeedback {}
 
 impl GroupHitboxes {
     pub fn get(name: &SharedString, cx: &mut App) -> Option<HitboxId> {

@@ -506,6 +506,8 @@ struct Values {
     close_to_tray: bool,
     tray_icon: bool,
     stay_awake: bool,
+    /// Whether a press is answered with a haptic tick, on a device that has one.
+    haptics: bool,
     /// Whether a file handed in by the OS goes straight to the now playing view.
     now_playing_on_file_open: bool,
     /// Whether the Windows taskbar button fills with the track's progress while it plays. Off
@@ -777,6 +779,7 @@ impl Default for Values {
             close_to_tray: true,
             tray_icon: true,
             stay_awake: true,
+            haptics: true,
             now_playing_on_file_open: true,
             taskbar_progress: true,
             language: i18n::AUTO.to_owned(),
@@ -1354,6 +1357,10 @@ impl AppSettings {
     }
 
     /// Whether music keeps the system awake and, in fullscreen, the display.
+    pub fn haptics(&self) -> bool {
+        self.values.haptics
+    }
+
     pub fn stay_awake(&self) -> bool {
         self.values.stay_awake
     }
@@ -2035,6 +2042,11 @@ impl AppSettings {
 
     pub fn set_tray_icon(&mut self, tray_icon: bool, cx: &mut Context<Self>) {
         self.values.tray_icon = tray_icon;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_haptics(&mut self, haptics: bool, cx: &mut Context<Self>) {
+        self.values.haptics = haptics;
         self.schedule_save(cx);
     }
 

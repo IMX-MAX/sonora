@@ -101,6 +101,8 @@ const POSTER_ASPECT: f32 = 1.;
 const POSTER_FADE: f32 = 0.45;
 /// How opaque the disc behind the poster's menu button is, so it reads over a light picture.
 const POSTER_MENU_SHADE: f32 = 0.5;
+/// How much of the page's scroll the poster's picture follows, which is what makes it trail.
+const POSTER_DRIFT: f32 = 0.45;
 /// Where the shade under the poster's name starts, as a share of the poster's height.
 const POSTER_SHADE_FROM: f32 = 0.4;
 
@@ -359,7 +361,7 @@ impl ArtistView {
 
     /// The page's head. With `poster` the portrait fills the page's width as a banner with the
     /// name and the buttons centred over its foot, which is how a narrow page shows an artist.
-    fn header(&self, poster: bool, cx: &Context<Self>) -> AnyElement {
+    fn header(&self, poster: bool, scrolled: Pixels, cx: &Context<Self>) -> AnyElement {
         let artist = self.detail.read(cx).artist();
         let title = artist
             .map(|artist| SharedString::from(artist.name.clone()))
@@ -406,6 +408,8 @@ impl ArtistView {
             let inset = theme.metrics.inset;
             let across = self.width + inset * 2.;
             let height = across * POSTER_ASPECT;
+            // The picture trails the page as it scrolls, so it leaves slower than what lies on it.
+            let drift = (scrolled * POSTER_DRIFT).min(height);
             let meta = (listeners.is_some() || followers.is_some())
                 .then(|| artist_meta(listeners, followers));
             return div()
@@ -425,10 +429,12 @@ impl ArtistView {
                         .overflow_hidden()
                         .fade_edges(Pixels::ZERO, height * POSTER_FADE)
                         .child(
-                            Artwork::new(Some(cover))
-                                .size(across)
-                                .wide(height)
-                                .overlay(),
+                            div().absolute().top(drift).left_0().child(
+                                Artwork::new(Some(cover))
+                                    .size(across)
+                                    .wide(height)
+                                    .overlay(),
+                            ),
                         )
                         .child(div().absolute().inset_0().bg(linear_gradient(
                             180.,
@@ -1292,7 +1298,7 @@ impl ArtistView {
         true
     }
 
-    fn about_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn about_dialog(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.about_open {
             return None;
         }
@@ -1301,9 +1307,11 @@ impl ArtistView {
         Some(
             about_modal(
                 artist.name.clone().into(),
+                artist.cover_large.clone(),
                 artist.biography.clone(),
                 None,
                 &self.about_bar,
+                window,
                 cx,
             )
             .action(
@@ -1432,7 +1440,7 @@ impl Render for ArtistView {
                 .read(cx)
                 .artist()
                 .is_some_and(|artist| artist.cover_large.is_some());
-        let head = self.header(poster, cx);
+        let head = self.header(poster, scrolled(&scroll), cx);
         let cover = theme.metrics.cover;
         let banner_shown = self
             .detail
@@ -1518,7 +1526,7 @@ impl Render for ArtistView {
             .size_full()
             .child(page)
             .when_some(track_menu, |this, menu| this.child(menu))
-            .children(self.about_dialog(cx))
+            .children(self.about_dialog(window, cx))
             .children(self.favorites_dialog(window, cx))
             .child(self.cover_viewer.clone())
             .into_any_element()

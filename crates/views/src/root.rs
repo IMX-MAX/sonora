@@ -44,6 +44,9 @@ use crate::{
 
 /// How much smaller than its size the fullscreen player starts as it opens, zooming up to fill
 /// the window.
+/// How close two haptic ticks may come before they count as one press.
+#[cfg(target_os = "android")]
+const HAPTIC_GAP: std::time::Duration = std::time::Duration::from_millis(40);
 const SHELL_ZOOM: f32 = 0.03;
 /// How close the opening zoom comes to its end before it counts as landed.
 const SHELL_ZOOM_REST: f32 = 1e-3;
@@ -289,6 +292,25 @@ impl Root {
         });
 
         let settings = cx.new(|cx| SettingsView::new(session.clone(), playback.clone(), cx));
+        // A press that lands on anything pressable ticks, unless the setting turns that off. One
+        // press can reach nested listeners, so ticks closer than `HAPTIC_GAP` count as one.
+        #[cfg(target_os = "android")]
+        {
+            let last = std::cell::Cell::new(None::<std::time::Instant>);
+            cx.set_global(gpui::ClickFeedback(std::rc::Rc::new(move |cx| {
+                if !Sonora::global(cx).settings.read(cx).haptics() {
+                    return;
+                }
+                let now = std::time::Instant::now();
+                if last
+                    .replace(Some(now))
+                    .is_some_and(|before| now.duration_since(before) < HAPTIC_GAP)
+                {
+                    return;
+                }
+                state::haptic_tap();
+            })));
+        }
         let equalizer = Sonora::global(cx).equalizer.clone();
         let equalizer = cx.new(|cx| EqualizerView::new(equalizer, window, cx));
         let settings_header =

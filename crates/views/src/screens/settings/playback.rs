@@ -327,6 +327,21 @@ impl SettingsView {
         )
     }
 
+    pub(super) fn haptics_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let on = self.settings.read(cx).haptics();
+
+        self.row(
+            t!("settings-haptics"),
+            Switch::new("haptics", on)
+                .name(t!("settings-haptics"))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_haptics(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
     pub(super) fn stay_awake_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let on = self.settings.read(cx).stay_awake();
 

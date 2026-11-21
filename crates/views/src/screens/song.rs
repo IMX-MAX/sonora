@@ -498,7 +498,7 @@ impl SongView {
         true
     }
 
-    fn about_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn about_dialog(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.about_open {
             return None;
         }
@@ -510,9 +510,11 @@ impl SongView {
         Some(
             about_modal(
                 artist.name.clone().into(),
+                artist.cover_large.clone(),
                 artist.biography.clone(),
                 artist_id.map(Into::into),
                 &self.about_bar,
+                window,
                 cx,
             )
             .action(
@@ -641,7 +643,7 @@ impl Render for SongView {
                     }),
             )
             .children(self.menu(cx))
-            .children(self.about_dialog(cx))
+            .children(self.about_dialog(window, cx))
             .into_any_element()
     }
 }

@@ -264,6 +264,14 @@ pub(crate) fn keep_screen_on(on: bool) {
     });
 }
 
+/// Plays the system's short haptic tick, for a press the app has taken.
+pub(crate) fn haptic_tap() {
+    with_activity(|env, cls| {
+        env.call_static_method(cls, jni_str!("hapticTap"), jni_sig!(() -> void), &[])?;
+        Ok(())
+    });
+}
+
 fn with_activity<F>(call: F)
 where
     F: FnOnce(&mut Env<'_>, &JClass<'_>) -> jni::errors::Result<()>,

@@ -4,13 +4,14 @@ use std::rc::Rc;
 use gpui::accesskit::Role;
 use gpui::prelude::*;
 use gpui::{
-    App, ClickEvent, Entity, FontStyle, HighlightStyle, Pixels, SharedString, StyledText, Window,
-    div, px,
+    App, ClickEvent, Entity, FontStyle, FontWeight, HighlightStyle, Pixels, SharedString,
+    StyledText, Window, div, linear_color_stop, linear_gradient, px,
 };
 use i18n::t;
 use router::{Destination, navigate};
 use ui::{
-    ActiveTheme as _, Artwork, Button, Glowing as _, Modal, Scrollbar, Scroller, eyebrow, heading,
+    ActiveTheme as _, Artwork, Button, Glowing as _, Modal, Scrollbar, Scroller, Text, eyebrow,
+    heading,
 };
 
 use crate::shared::effects;
@@ -20,6 +21,10 @@ const LINES: usize = 3;
 const DIALOG: f32 = 4.5;
 const BIO_HEIGHT: Pixels = px(360.);
 const FADE: Pixels = px(64.);
+/// How tall the picture across the top of the about dialog stands, as a share of its width.
+const BANNER_ASPECT: f32 = 0.8;
+/// Where the picture starts fading into the panel, as a share of its height.
+const BANNER_SHADE_FROM: f32 = 0.4;
 
 type Open = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -116,17 +121,57 @@ impl RenderOnce for AboutArtist {
 
 pub(crate) fn about_modal(
     name: SharedString,
+    cover: Option<String>,
     biography: Option<String>,
     artist: Option<SharedString>,
     bar: &Entity<Scrollbar>,
+    window: &Window,
     cx: &App,
 ) -> Modal {
     let theme = *cx.theme();
     let biography = biography.filter(|biography| !biography.is_empty());
+    let room = theme.metrics.inset;
+    let insets = window.insets().effective();
+    // The panel is as wide as the dialog asks or as the window leaves it, whichever is less,
+    // and the picture across its top is cut to exactly that.
+    let width = (theme.metrics.cover * DIALOG)
+        .min(window.viewport_size().width - room * 2. - insets.left - insets.right);
+    let height = width * BANNER_ASPECT;
 
     Modal::new("artist-about-dialog", t!("artist-about"))
-        .w(theme.metrics.cover * DIALOG)
-        .detail(name)
+        .w(width)
+        .map(|modal| match cover {
+            // With a picture the name is written over its foot, where it fades into the panel.
+            Some(cover) => modal.banner(
+                div()
+                    .relative()
+                    .w(width)
+                    .h(height)
+                    .overflow_hidden()
+                    .child(Artwork::new(Some(cover)).size(width).wide(height).overlay())
+                    .child(div().absolute().inset_0().bg(linear_gradient(
+                        180.,
+                        linear_color_stop(theme.popover.opacity(0.), BANNER_SHADE_FROM),
+                        linear_color_stop(theme.popover, 1.),
+                    )))
+                    .child(
+                        div()
+                            .id("artist-about-name")
+                            .role(Role::Heading)
+                            .aria_level(2)
+                            .aria_label(name.clone())
+                            .absolute()
+                            .left(room)
+                            .right(room)
+                            .bottom_0()
+                            .truncate()
+                            .text_size(theme.text(Text::Display))
+                            .font_weight(FontWeight::BOLD)
+                            .child(name),
+                    ),
+            ),
+            None => modal.detail(name),
+        })
         .map(|modal| match biography {
             Some(biography) => {
                 let overflows = bar.read(cx).scroll().max_offset().y > Pixels::ZERO;

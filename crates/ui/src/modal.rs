@@ -108,6 +108,8 @@ pub struct Modal {
     trailing: Option<AnyElement>,
     dismiss: Option<Dismiss>,
     close_button: bool,
+    /// What lies across the top of the panel, edge to edge, above the title.
+    banner: Option<AnyElement>,
 }
 
 impl Modal {
@@ -123,7 +125,14 @@ impl Modal {
             trailing: None,
             dismiss: None,
             close_button: false,
+            banner: None,
         }
+    }
+
+    /// Lays `banner` across the top of the panel, edge to edge, above the title.
+    pub fn banner(mut self, banner: impl IntoElement) -> Self {
+        self.banner = Some(banner.into_any_element());
+        self
     }
 
     pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
@@ -198,6 +207,7 @@ impl RenderOnce for Modal {
             trailing,
             dismiss,
             close_button,
+            banner,
         } = self;
         let outside = dismiss.clone();
         let mark = LATEST.with(|latest| {
@@ -289,6 +299,7 @@ impl RenderOnce for Modal {
                     .bg(theme.popover)
                     .shadow_lg()
                     .overflow_hidden()
+                    .children(banner.map(|banner| div().flex_none().child(banner)))
                     .child(
                         div()
                             .flex()
