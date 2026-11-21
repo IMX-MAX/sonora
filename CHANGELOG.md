@@ -13,6 +13,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Search on Android opens quick search, as Ctrl+K does.
 - Save a song as an MP3 or M4A from its menu: hold it on a phone, right-click it on a desktop. The file goes to Music/Sonora, on the phone's shared storage or in your Music folder, with its title, artist, album and cover.
 - Choose SF Pro Display under Settings, Appearance, Typeface in builds that carry it.
+- Pick Tokyo Night (Night, Storm and Day), Everforest (Dark and Light), One Dark, Kanagawa, Monokai, OLED or Pink under Settings, Appearance, Theme.
+- The sidebar slides in when it opens.
+- The Android back button and gesture close what is open, then go back a page, and leave the app from the first page.
+- Words held for a long time glow in synced lyrics.
+
+### Changed
+
+- Wordless stretches in lyrics show three dots instead of music notes.
+- The back and forward buttons and the swipe to go back are gone on Android, where the system back does it.
 
 ### Fixed
 
@@ -24,6 +33,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The playback notification on Android goes away once nothing is left to play, can be swiped away while paused, and leaves on its own after ten minutes paused.
 - Music pauses on Android when headphones are unplugged or a Bluetooth headset disconnects.
 - Taps work again on Android after the keyboard closes, such as after picking a quick search result, and words typed with suggestions no longer repeat.
+- Quick search no longer lists keyboard keys under its results.
+- Typing in search no longer freezes Sonora for a moment with a large library.
+- Pinned items stay in the sidebar while Sonora is offline.
 
 ## [0.50.3] - 2026-11-20
 
