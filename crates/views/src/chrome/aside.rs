@@ -2845,7 +2845,7 @@ fn karaoke_lane(
                                     false => this.left(before),
                                 })
                                 .whitespace_nowrap()
-                                .text_color(gpui::transparent_black())
+                                .text_color(sung.karaoke_tint.opacity(0.))
                                 .text_shadow([halo(level)])
                                 .child(fragments[index].clone())
                         })
