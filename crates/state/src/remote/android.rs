@@ -251,6 +251,19 @@ pub(crate) fn save_to_music(path: &std::path::Path, name: &str, mime: &str) -> R
     }
 }
 
+/// Keeps the screen from dimming and locking while `on`, for a view meant to be watched.
+pub(crate) fn keep_screen_on(on: bool) {
+    with_activity(|env, cls| {
+        env.call_static_method(
+            cls,
+            jni_str!("keepScreenOn"),
+            jni_sig!((int) -> void),
+            &[JValue::Int(i32::from(on))],
+        )?;
+        Ok(())
+    });
+}
+
 fn with_activity<F>(call: F)
 where
     F: FnOnce(&mut Env<'_>, &JClass<'_>) -> jni::errors::Result<()>,

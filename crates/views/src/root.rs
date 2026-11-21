@@ -1003,12 +1003,17 @@ impl Root {
         self.follow_settings(&destination, cx);
         if let Destination::Fullscreen = destination {
             self.view = RootView::Fullscreen;
+            // The fullscreen player is watched rather than touched, so the screen stays awake.
+            state::keep_screen_on(true);
             self.announce_fullscreen(true, cx);
             self.pending = Some(Focus::Fullscreen);
             cx.notify();
             return;
         }
         self.announce_fullscreen(false, cx);
+        if let RootView::Fullscreen = self.view {
+            state::keep_screen_on(false);
+        }
         self.view = RootView::Workspace;
         self.pending = Some(match destination {
             Destination::Search => Focus::Search,

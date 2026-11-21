@@ -131,6 +131,27 @@ public class SonoraActivity extends NativeActivity {
         });
     }
 
+    /** Keeps the screen awake while `on` is not zero, and lets it sleep again otherwise. */
+    public static void keepScreenOn(final int on) {
+        final SonoraActivity act = sInstance;
+        if (act == null) {
+            return;
+        }
+        act.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (on != 0) {
+                        act.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    } else {
+                        act.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        });
+    }
+
     /** Sends the app to the background, as the back button does on the first page. */
     public static void leaveApp() {
         final SonoraActivity act = sInstance;

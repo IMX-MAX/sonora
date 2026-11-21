@@ -81,7 +81,7 @@ pub use queue::{
     Queue, QueueKind, QueuePlacement, QueuePosition, QueueSections, QueueSlot, QueueView, Resume,
     Stub,
 };
-pub use remote::{Remote, attach as attach_remote};
+pub use remote::{Remote, attach as attach_remote, keep_screen_on};
 pub use requirements::{Requirement, Requirements};
 pub use scan::Scan;
 pub use scrobble::{ScrobbleRow, ScrobbleState, Scrobbling};

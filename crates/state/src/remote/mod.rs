@@ -14,6 +14,14 @@ use crate::{Cover, Io, Playback, PlaybackState, Queue, Repeat, Sonora, join};
 mod android;
 #[cfg(target_os = "android")]
 pub(crate) use android::save_to_music;
+
+/// Keeps the screen awake while `on`, where the system lets an app ask for that.
+pub fn keep_screen_on(on: bool) {
+    #[cfg(target_os = "android")]
+    android::keep_screen_on(on);
+    #[cfg(not(target_os = "android"))]
+    let _ = on;
+}
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod mpris;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
