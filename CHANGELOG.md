@@ -18,6 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Android back button and gesture close what is open, then go back a page, and leave the app from the first page.
 - Words held for a long time glow letter by letter in synced lyrics.
 - The screen stays awake while the fullscreen player is open on Android.
+- Signing back in to Deezer at launch no longer downloads the web player first, so the library and queue come back sooner.
+- The Android APK is about a third of its former download size.
 
 ### Changed
 

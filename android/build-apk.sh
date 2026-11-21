@@ -83,7 +83,9 @@ cp "$B/dex/classes.dex" "$B/apk/"
 python3 - "$B" <<'PY'
 import sys, zipfile, os
 b = sys.argv[1]
-with zipfile.ZipFile(f"{b}/base.apk", "a", zipfile.ZIP_STORED) as z:
+# Compressed: the manifest has Android unpack the libraries at install, so nothing loads
+# them out of the archive.
+with zipfile.ZipFile(f"{b}/base.apk", "a", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
     for root, _, files in os.walk(f"{b}/apk"):
         for f in files:
             full = os.path.join(root, f)

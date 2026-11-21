@@ -235,8 +235,8 @@ pub struct Opened {
 }
 
 impl DeezerClient {
-    /// Signs in with an `arl` cookie: fetches the user data (which validates the cookie) and
-    /// the stream secret. An invalid or expired arl answers a user id of 0. With a `profile`,
+    /// Signs in with an `arl` cookie: fetches the user data, which validates the
+    /// cookie. An invalid or expired arl answers a user id of 0. With a `profile`,
     /// the session then switches to that family profile and fails if it cannot.
     pub async fn connect(arl: &str, profile: Option<&str>) -> Result<Self> {
         let client = Self::unopened(arl)?;
@@ -251,17 +251,16 @@ impl DeezerClient {
         if let Some(profile) = profile {
             client.switch(profile).await?;
         }
-        let secret = decrypt::secret(&client.inner.http).await;
         // set once here, before the client is cloned anywhere
-        client.inner.secret.set(secret).ok();
+        client.inner.secret.set(decrypt::SECRET).ok();
         Ok(client)
     }
 
-    /// A client for `arl` that has not reached Deezer, holding the last known stream secret. It
+    /// A client for `arl` that has not reached Deezer, holding the stream secret. It
     /// can derive the key of a downloaded track and do nothing else until it connects.
     pub fn offline(arl: &str) -> Result<Self> {
         let client = Self::unopened(arl)?;
-        client.inner.secret.set(decrypt::FALLBACK).ok();
+        client.inner.secret.set(decrypt::SECRET).ok();
         Ok(client)
     }
 
