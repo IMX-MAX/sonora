@@ -70,7 +70,7 @@ impl ConnectName {
 
     pub fn key(self) -> &'static str {
         match self {
-            Self::Sonora => "settings-spotify-connect-name-sonora",
+            Self::Sonora => "common-sonora",
             Self::Both => "settings-spotify-connect-name-both",
             Self::Computer => "settings-spotify-connect-name-computer",
             Self::Custom => "settings-spotify-connect-name-custom",
@@ -119,7 +119,7 @@ impl DiscordName {
 
     pub fn key(self) -> &'static str {
         match self {
-            Self::Sonora => "settings-discord-name-sonora",
+            Self::Sonora => "common-sonora",
             Self::Provider => "settings-discord-name-provider",
             Self::Music => "settings-discord-name-music",
             Self::Title => "settings-discord-name-title",
@@ -485,8 +485,9 @@ struct Values {
     /// sources go to the one listed higher.
     lyrics_provider_priority: Vec<String>,
     /// Whether lyrics timed word by word are shown ahead of any others, whatever source they
-    /// come from. The source order then only settles lyrics of the same kind.
-    lyrics_word_synced_first: bool,
+    /// come from. The source order then only settles lyrics of the same kind. It took a new key
+    /// when it came on by default, so settings saved while it was off pick up the new default.
+    lyrics_prefer_word_synced: bool,
     karaoke_lyrics: bool,
     blur_lyrics: bool,
     romanized_lyrics: bool,
@@ -496,6 +497,9 @@ struct Values {
     romanization_scripts: RomanizationScripts,
     adaptive_menu: bool,
     check_updates: bool,
+    /// Whether a release found is downloaded in the background and installed the next time
+    /// Sonora starts, rather than only offered.
+    auto_update: bool,
     /// The release channel chosen in settings, by its id. Empty follows the running build's own
     /// channel, and a copy a package manager installed ignores it.
     update_channel: String,
@@ -758,7 +762,7 @@ impl Default for Values {
                 .iter()
                 .map(|name| name.to_string())
                 .collect(),
-            lyrics_word_synced_first: false,
+            lyrics_prefer_word_synced: true,
             karaoke_lyrics: true,
             blur_lyrics: true,
             romanized_lyrics: true,
@@ -768,6 +772,7 @@ impl Default for Values {
             romanization_scripts: RomanizationScripts::default(),
             adaptive_menu: false,
             check_updates: cfg!(target_os = "windows") || updates_itself(),
+            auto_update: true,
             update_channel: String::new(),
             close_to_tray: true,
             tray_icon: true,
@@ -1282,7 +1287,7 @@ impl AppSettings {
 
     /// Whether lyrics timed word by word are shown ahead of any others, whatever their source.
     pub fn lyrics_word_synced_first(&self) -> bool {
-        self.values.lyrics_word_synced_first
+        self.values.lyrics_prefer_word_synced
     }
 
     pub fn lyrics_provider_enabled(&self, provider: &str) -> bool {
@@ -1334,6 +1339,10 @@ impl AppSettings {
 
     pub fn check_updates(&self) -> bool {
         self.values.check_updates
+    }
+
+    pub fn auto_update(&self) -> bool {
+        self.values.auto_update
     }
 
     pub fn close_to_tray(&self) -> bool {
@@ -1936,7 +1945,7 @@ impl AppSettings {
     }
 
     pub fn set_lyrics_word_synced_first(&mut self, first: bool, cx: &mut Context<Self>) {
-        self.values.lyrics_word_synced_first = first;
+        self.values.lyrics_prefer_word_synced = first;
         self.schedule_save(cx);
     }
 
@@ -2011,6 +2020,11 @@ impl AppSettings {
 
     pub fn set_check_updates(&mut self, check_updates: bool, cx: &mut Context<Self>) {
         self.values.check_updates = check_updates;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_auto_update(&mut self, auto_update: bool, cx: &mut Context<Self>) {
+        self.values.auto_update = auto_update;
         self.schedule_save(cx);
     }
 

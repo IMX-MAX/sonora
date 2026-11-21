@@ -9,8 +9,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Click the tray icon on Linux to show Sonora's window, or to hide it into the tray when it is open.
-- Choose Wide under Settings, Appearance, Page width to let pages fill a large window again instead of staying centred.
 - Swipe a song sideways in the queue on a touch screen to remove it, or hold it and drag it to a new place.
 - Search on Android opens quick search, as Ctrl+K does.
 - Save a song as an MP3 or M4A from its menu: hold it on a phone, right-click it on a desktop. The file goes to Music/Sonora, on the phone's shared storage or in your Music folder, with its title, artist, album and cover.
@@ -26,6 +24,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The playback notification on Android goes away once nothing is left to play, can be swiped away while paused, and leaves on its own after ten minutes paused.
 - Music pauses on Android when headphones are unplugged or a Bluetooth headset disconnects.
 - Taps work again on Android after the keyboard closes, such as after picking a quick search result, and words typed with suggestions no longer repeat.
+
+## [0.50.3] - 2026-11-20
+
+### Changed
+
+- Word-synced lyrics are shown ahead of line-synced ones by default again, whichever source has them. Turn Prioritize word-synced lyrics off in Lyrics sources to let the source order decide.
+- The Nix package builds on a Mac without Xcode, and an Apple silicon Mac downloads it from the binary cache instead of compiling it.
+
+### Fixed
+
+- Your YouTube Music library lists every artist you follow, not only the first couple dozen.
+- A queue that mixes your own files with streaming songs plays the song it moves on to, instead of carrying on with an earlier local file while the player sits still.
+- Apple Music songs matched from your own files show up in Library and play again after Apple pulls or stops streaming the catalog version they matched.
+- Two copies of one Apple Music song in your library stay separate songs instead of merging into one.
+- When songs of one Navidrome or Subsonic album carry their own covers, the fullscreen player and the system media controls show each song's own cover.
+- The nightly update channel finds new nightly builds again. A nightly installed before November 19 does not see them, so install the latest nightly by hand once.
+
+## [0.50.2] - 2026-11-18
+
+### Added
+
+- Click the tray icon on Linux to show Sonora's window, or to hide it into the tray when it is open.
+- Choose Wide under Settings, Appearance, Page width to let pages fill a large window again instead of staying centred.
+- Sonora downloads new versions in the background and installs them the next time it starts, on Windows, macOS and the AppImage. Turn this off under Settings, About, Install updates automatically.
+- Go back and forward with the side buttons of your mouse or a touchpad swipe on Windows.
+
+### Fixed
+
 - Music keeps playing smoothly on Windows while another program keeps the processor busy, without raising Sonora's priority in Task Manager.
 - The fullscreen player counts down the time left when Show time left is on, as the player bar does.
 - Clicking a song or other suggestion under the search page field opens it again instead of just closing the list.
@@ -35,6 +61,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Radio carries on with similar songs again after an album or playlist ends with Soloist.
 - Picking a Deezer Family profile at sign-in switches to it instead of failing and staying on the account owner.
 - Blur window stays available on Linux at 100% opacity, so a compositor that makes Sonora see-through, such as when it is unfocused, blurs the desktop behind it.
+- Soloist plays again after Sonora crashed, instead of the leftover Soloist blocking every song.
+- Repeat All goes back to the first song again with Soloist, instead of carrying on into other songs.
+- The Turkish, Korean and Indonesian translations are complete again, so no screen falls back to English.
 
 ## [0.50.1] - 2026-11-17
 
@@ -2803,7 +2832,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release: a native Spotify client with playback, an interactive queue, the saved library,
 search, album, playlist, artist and song pages, context menus and adaptive theming.
 
-[unreleased]: https://github.com/sonorahq/sonora/compare/v0.50.1...HEAD
+[unreleased]: https://github.com/sonorahq/sonora/compare/v0.50.3...HEAD
+[0.50.3]: https://github.com/sonorahq/sonora/compare/v0.50.2...v0.50.3
+[0.50.2]: https://github.com/sonorahq/sonora/compare/v0.50.1...v0.50.2
 [0.50.1]: https://github.com/sonorahq/sonora/compare/v0.50.0...v0.50.1
 [0.50.0]: https://github.com/sonorahq/sonora/compare/v0.49.1...v0.50.0
 [0.49.1]: https://github.com/sonorahq/sonora/compare/v0.49.0...v0.49.1

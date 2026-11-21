@@ -73,6 +73,10 @@ pub(crate) fn main() -> ExitCode {
         crate::single::Instance::Running => return ExitCode::SUCCESS,
         crate::single::Instance::Failed => exit(1),
     }
+    // Only the instance that owns the socket may replace Sonora, never a hand-off to one that runs.
+    if state::start_staged(!args.is_empty()) {
+        return ExitCode::SUCCESS;
+    }
 
     run_app(args, sender, links, commands)
 }
