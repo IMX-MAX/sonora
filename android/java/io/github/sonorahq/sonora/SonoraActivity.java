@@ -631,6 +631,27 @@ public class SonoraActivity extends NativeActivity {
                 window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
                 window.setStatusBarColor(Color.TRANSPARENT);
                 window.setNavigationBarColor(Color.TRANSPARENT);
+                // The app draws behind the status bar and the navigation or gesture bar, and
+                // keeps its own controls clear of them from the insets reported below.
+                if (Build.VERSION.SDK_INT >= 30) {
+                    window.setDecorFitsSystemWindows(false);
+                } else {
+                    window.getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    );
+                }
+                if (Build.VERSION.SDK_INT >= 29) {
+                    window.setNavigationBarContrastEnforced(false);
+                    window.setStatusBarContrastEnforced(false);
+                }
+                if (Build.VERSION.SDK_INT >= 28) {
+                    WindowManager.LayoutParams attrs = window.getAttributes();
+                    attrs.layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                    window.setAttributes(attrs);
+                }
                 if (Build.VERSION.SDK_INT >= 30) {
                     WindowInsetsController controller = window.getInsetsController();
                     if (controller != null) {

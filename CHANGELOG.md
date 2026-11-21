@@ -21,6 +21,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Wordless stretches in lyrics show three dots instead of music notes.
+- Sonora on Android fills the screen to the bottom edge, with the player bar and the fullscreen player drawn behind the gesture bar.
 - The back and forward buttons and the swipe to go back are gone on Android, where the system back does it.
 
 ### Fixed
