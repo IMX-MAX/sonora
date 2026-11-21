@@ -16,7 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pick Tokyo Night (Night, Storm and Day), Everforest (Dark and Light), One Dark, Kanagawa, Monokai, OLED or Pink under Settings, Appearance, Theme.
 - The sidebar slides in when it opens.
 - The Android back button and gesture close what is open, then go back a page, and leave the app from the first page.
-- Words held for a long time glow in synced lyrics.
+- Words held for a long time glow letter by letter in synced lyrics.
+- The screen stays awake while the fullscreen player is open on Android.
 
 ### Changed
 
