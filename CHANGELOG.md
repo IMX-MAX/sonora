@@ -26,6 +26,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Classic, Centered and Compact under Settings, Appearance, Player bar each draw their own player bar on a phone: Centered puts the song in the middle over shuffle and repeat, Compact is one row under the seek line.
 - The remove button on queue songs shows and responds to taps on touch screens.
 - Holding a queue song on Android opens its menu only when you let go without dragging.
 - Downloads on Android are kept as plain files in Sonora's own storage that play straight away, and earlier downloads, including any kept in Music/Sonora, are moved over on their own. Sonora no longer asks for All files access.
