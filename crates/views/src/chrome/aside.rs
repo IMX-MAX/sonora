@@ -54,13 +54,21 @@ const VEIL: f32 = 0.3;
 const HAZE: f32 = 0.45;
 const VERSE_FADE: f32 = 1.25;
 const PAST: f32 = 0.4;
-/// A word sung for at least `HELD` glows while it lasts: the glow swells over `GLOW_SWELL`,
-/// fades over `GLOW_FADE` after the word, is `GLOW` strong and reaches `GLOW_REACH` verse sizes.
+/// The emphasis a held word gets, after AMLL's. A word glows when it is sung for at least `HELD`
+/// and, in a script with spaces, is `EMPHASIS_LETTERS` long; a run of wide characters timed as
+/// one word counts each character as its share of the time. The glow passes over the letters
+/// one after another, the last starting `1 / EMPHASIS_STAGGER` of the way through. Its strength
+/// grows with the hold up to `EMPHASIS_MOST`, a line's last word getting `EMPHASIS_LAST` times
+/// as much for `EMPHASIS_LINGER` times as long, and it reaches `EMPHASIS_REACH` verse sizes.
 const HELD: std::time::Duration = std::time::Duration::from_millis(1000);
-const GLOW_SWELL: std::time::Duration = std::time::Duration::from_millis(600);
-const GLOW_FADE: std::time::Duration = std::time::Duration::from_millis(500);
-const GLOW: f32 = 0.7;
-const GLOW_REACH: f32 = 0.3;
+const EMPHASIS_LETTERS: std::ops::RangeInclusive<usize> = 2..=7;
+const EMPHASIS_STAGGER: f32 = 2.5;
+const EMPHASIS_FULL: f32 = 3.;
+const EMPHASIS_STRENGTH: f32 = 0.5;
+const EMPHASIS_LAST: f32 = 1.5;
+const EMPHASIS_LINGER: f32 = 1.2;
+const EMPHASIS_MOST: f32 = 0.8;
+const EMPHASIS_REACH: f32 = 0.3;
 /// The dots of a wordless stretch, in verse sizes: the room each takes and the space between
 /// them. They swell by `DOT_BREATH` `DOT_BREATHS` times over the stretch and shrink away over
 /// what is left of it past `DOT_LEAVE`.
@@ -2771,12 +2779,38 @@ fn karaoke_lane(
         (Some(&(start, end, tail)), _) => swept(start, end, position, tail),
         (None, _) => 0.,
     };
-    let glow = |word: usize| match windows.get(word) {
-        Some(&(start, end, _)) => held_glow(start, end, position),
-        None => 0.,
-    };
-    let halo = |level: f32| {
-        gpui::TextShadow::new(sung.karaoke_tint.opacity(GLOW * level)).blur(verse * GLOW_REACH)
+    // The glow of a held word, laid over `text`, the part of it one fragment shows: a copy of
+    // the letters that draws only their shadows, each letter lit in its turn.
+    let halos = |word: usize, text: &SharedString| -> Option<Div> {
+        let &(start, end, last) = windows.get(word)?;
+        let emphasis = Emphasis::of(words.get(word)?, start, end, last)?;
+        let letters = text.chars().count();
+        let levels = (0..letters)
+            .map(|letter| emphasis.level(letter, letters, position))
+            .collect::<Vec<_>>();
+        if levels.iter().all(|level| *level <= 0.) {
+            return None;
+        }
+        let reach = verse * emphasis.reach();
+        Some(
+            div()
+                .absolute()
+                .top_0()
+                .flex()
+                .whitespace_nowrap()
+                .text_color(sung.karaoke_tint.opacity(0.))
+                .children(text.chars().zip(levels).map(|(letter, level)| {
+                    div()
+                        .flex_none()
+                        .when(level > 0., |this| {
+                            this.text_shadow([gpui::TextShadow::new(
+                                sung.karaoke_tint.opacity(level),
+                            )
+                            .blur(reach)])
+                        })
+                        .child(SharedString::from(letter.to_string()))
+                })),
+        )
     };
     // a right-to-left line is read from its right edge, so its fill grows from there, and the
     // text inside it hangs from that edge to line up with the text beneath
@@ -2828,26 +2862,17 @@ fn karaoke_lane(
             .text_left()
             .children((0..plan.rows.len()).map(|row| {
                 let reveal = revealed(plan, row, &windows, position, edge_fade);
-                // A held word glows where it sits in the row, under the row's own text.
+                // A held word glows where it sits in the row, over the row's own text.
                 let mut offset = px(0.);
                 let halos = plan.rows[row]
                     .clone()
                     .filter_map(|index| {
                         let before = offset;
                         offset += plan.widths.get(index).copied().unwrap_or(px(0.));
-                        let level = glow(spoken.get(index).copied().unwrap_or(index));
-                        (level > 0.).then(|| {
-                            div()
-                                .absolute()
-                                .top_0()
-                                .map(|this| match rtl {
-                                    true => this.right(before),
-                                    false => this.left(before),
-                                })
-                                .whitespace_nowrap()
-                                .text_color(sung.karaoke_tint.opacity(0.))
-                                .text_shadow([halo(level)])
-                                .child(fragments[index].clone())
+                        let word = spoken.get(index).copied().unwrap_or(index);
+                        halos(word, &fragments[index]).map(|halo| match rtl {
+                            true => halo.right(before),
+                            false => halo.left(before),
                         })
                     })
                     .collect::<Vec<_>>();
@@ -2880,9 +2905,9 @@ fn karaoke_lane(
                         false => 0.,
                     },
                 };
-                let level = glow(spoken.get(index).copied().unwrap_or(index));
+                let word = spoken.get(index).copied().unwrap_or(index);
                 lit(fragments[index].clone(), reveal)
-                    .when(level > 0., |this| this.text_shadow([halo(level)]))
+                    .children(halos(word, &fragments[index]).map(|halo| halo.left_0()))
             })),
     }
 }
@@ -3485,19 +3510,74 @@ fn swept(
     }
 }
 
-/// How strongly a word glows, from 0 to 1. Only a word held for `HELD` or longer glows: it
-/// swells as the word starts and fades once the word is over.
-fn held_glow(
+/// The glow a held word is sung with: when it starts, how long it lasts and how strong it gets.
+struct Emphasis {
     start: std::time::Duration,
-    end: std::time::Duration,
-    position: std::time::Duration,
-) -> f32 {
-    if end.saturating_sub(start) < HELD || position < start {
-        return 0.;
+    span: std::time::Duration,
+    strength: f32,
+}
+
+impl Emphasis {
+    /// The emphasis of `word`, sung from `start` to `end`, or none for a word that is not held.
+    /// `last` is whether it ends its line.
+    fn of(
+        word: &music::LyricsWord,
+        start: std::time::Duration,
+        end: std::time::Duration,
+        last: bool,
+    ) -> Option<Self> {
+        let text = word.text.trim();
+        let letters = text.chars().count();
+        let held = end.saturating_sub(start);
+        let emphasized = match letters > 0 && text.chars().all(wide) {
+            // Each character of a wide run is sung for its share, so a phrase timed as one word
+            // glows only when every character in it is held.
+            true => held.div_f32(letters as f32) >= HELD,
+            false => held >= HELD && EMPHASIS_LETTERS.contains(&letters),
+        };
+        if !emphasized {
+            return None;
+        }
+        let span = held.max(HELD);
+        let hold = span.as_secs_f32() / EMPHASIS_FULL;
+        let strength = match hold > 1. {
+            true => hold.sqrt(),
+            false => hold.powi(3),
+        } * EMPHASIS_STRENGTH;
+        let (span, strength) = match last {
+            true => (span.mul_f32(EMPHASIS_LINGER), strength * EMPHASIS_LAST),
+            false => (span, strength),
+        };
+        Some(Self {
+            start,
+            span,
+            strength: strength.min(EMPHASIS_MOST),
+        })
     }
-    let swell = ease_out_cubic(progress_between(start, start + GLOW_SWELL, position));
-    let fade = 1. - progress_between(end, end + GLOW_FADE, position);
-    swell * fade
+
+    /// How lit the `letter`th of `letters` is at `position`, from 0 up to the strength. The glow
+    /// swells over the first half of its span and fades over the second.
+    fn level(&self, letter: usize, letters: usize, position: std::time::Duration) -> f32 {
+        let wait = self
+            .span
+            .div_f32(EMPHASIS_STAGGER * letters.max(1) as f32)
+            .mul_f32(letter as f32);
+        let start = self.start + wait;
+        if position <= start {
+            return 0.;
+        }
+        let passed = progress_between(start, start + self.span, position);
+        let lit = match passed < 0.5 {
+            true => ease_out_cubic(passed * 2.),
+            false => 1. - ui::motion::ease_in_out_cubic(passed * 2. - 1.),
+        };
+        lit * self.strength
+    }
+
+    /// How far the glow reaches, in verse sizes.
+    fn reach(&self) -> f32 {
+        (self.strength * EMPHASIS_REACH).min(EMPHASIS_REACH)
+    }
 }
 
 fn progress_between(
