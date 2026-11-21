@@ -613,7 +613,8 @@ impl PlayerBar {
                     + theme.metrics.control_small
                     + window.rem_size() * STACK_GAP
             }
-            (true, _) if narrow => theme.metrics.player_bar + theme.metrics.pad * 4.,
+            // The classic phone bar ends as close under its contents as the compact one does.
+            (true, _) if narrow => theme.metrics.player_bar + theme.metrics.pad * 3.,
             (true, _) => theme.metrics.player_bar + theme.metrics.pad * 3.,
             (false, PlayerBarLayout::Compact) => theme.metrics.row + theme.metrics.pad * 2.,
             _ => theme.metrics.player_bar,
@@ -630,6 +631,9 @@ impl Render for PlayerBar {
         let stacked = Self::stacked(window, layout);
         let narrow = Self::narrow(window);
         let slim = Self::slim(window, cx);
+        // The classic phone bar, whose contents sit low: it keeps no padding under them.
+        let classic = Self::narrow(window)
+            && Sonora::global(cx).settings.read(cx).player_bar_layout() == PlayerBarLayout::Classic;
         let transparent = self.settings.read(cx).player_bar_translucent();
         let height = Self::height(window, cx);
         // Equal wings keep the title centered while reserving the original volume slider width.
@@ -697,7 +701,10 @@ impl Render for PlayerBar {
                 true => this.px_3(),
                 false => this.px_5(),
             })
-            .when(stacked && !slim, |this| this.py_2());
+            .when(stacked && !slim, |this| match classic {
+                true => this.pt_2(),
+                false => this.py_2(),
+            });
 
         let context_menu = self.context_menu.clone().map(|(track, position)| {
             Popup::new(position, self.track_menu.for_track(&track, cx)).on_close(cx.listener(
