@@ -17,10 +17,11 @@ use music::{SavedArtist, Track};
 use state::{AppSettings, ArtistDetail, Origin, Playback, Sonora};
 use ui::ActiveTheme as _;
 use ui::Listing as _;
+use ui::Pinnable as _;
 use ui::{
     Artwork, Button, Card, Deck, MIN_CONTENT, Modal, Mode, Pending, Picker, Pin, PinKind, Popovers,
-    Popup, Scrollbar, Scroller, TableDelegate, TableEvent, TableState, Text, effects, scrolled,
-    snapped, spoken, table,
+    Popup, Room, Scrollbar, Scroller, TableDelegate, TableEvent, TableState, Text, effects,
+    scrolled, snapped, spoken, table,
 };
 
 use crate::chrome::tools;
@@ -92,6 +93,17 @@ const BANNER_DIM: f32 = 0.3;
 /// bottom. The banner also fades out from the hero's top and is gone at its bottom.
 const BANNER_SHADE_FROM: f32 = 0.5;
 const BANNER_SHADE: f32 = 0.85;
+/// How tall the poster of a narrow page stands, as a share of the page's full width. Portraits
+/// are square, so this shows nearly all of one.
+const POSTER_ASPECT: f32 = 1.;
+/// The share of the poster's height, from the bottom up, over which the picture fades into the
+/// page so the name and the buttons lying there read against it.
+const POSTER_FADE: f32 = 0.45;
+/// How opaque the disc behind the poster's menu button is, so it reads over a light picture.
+const POSTER_MENU_SHADE: f32 = 0.5;
+/// Where the shade under the poster's name starts, as a share of the poster's height.
+const POSTER_SHADE_FROM: f32 = 0.4;
+
 /// The blur over a portrait standing in for a missing banner, enough to leave only its colours.
 const BANNER_WASH: Pixels = px(48.);
 
@@ -345,7 +357,9 @@ impl ArtistView {
         cx.notify();
     }
 
-    fn header(&self, cx: &Context<Self>) -> AnyElement {
+    /// The page's head. With `poster` the portrait fills the page's width as a banner with the
+    /// name and the buttons centred over its foot, which is how a narrow page shows an artist.
+    fn header(&self, poster: bool, cx: &Context<Self>) -> AnyElement {
         let artist = self.detail.read(cx).artist();
         let title = artist
             .map(|artist| SharedString::from(artist.name.clone()))
@@ -367,28 +381,18 @@ impl ArtistView {
                 .left()
                 .menu(artist_menu(artist, self.playback.clone(), true, cx))
         });
-        let actions = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(
-                HeroPlayButton::new(
-                    "play-artist",
-                    self.popular.as_ref().clone(),
-                    self.playback.clone(),
-                )
-                .load_origin(self.playing_from(cx)),
-            )
-            .child(
-                HeroPlayButton::shuffle(
-                    "shuffle-artist",
-                    self.popular.as_ref().clone(),
-                    self.playback.clone(),
-                )
-                .load_origin(self.playing_from(cx)),
-            )
-            .children(self.favorite_button(cx))
-            .children(overflow);
+        let play = HeroPlayButton::new(
+            "play-artist",
+            self.popular.as_ref().clone(),
+            self.playback.clone(),
+        )
+        .load_origin(self.playing_from(cx));
+        let shuffle = HeroPlayButton::shuffle(
+            "shuffle-artist",
+            self.popular.as_ref().clone(),
+            self.playback.clone(),
+        )
+        .load_origin(self.playing_from(cx));
 
         let cover = artist.and_then(|artist| artist.cover_large.clone());
         let pin = self
@@ -396,6 +400,96 @@ impl ArtistView {
             .read(cx)
             .id()
             .map(|id| Pin::new(PinKind::Artist, id, title.clone()).cover(cover.clone()));
+
+        if poster && let Some(cover) = cover.clone() {
+            let theme = *cx.theme();
+            let inset = theme.metrics.inset;
+            let across = self.width + inset * 2.;
+            let height = across * POSTER_ASPECT;
+            let meta = (listeners.is_some() || followers.is_some())
+                .then(|| artist_meta(listeners, followers));
+            return div()
+                .id("artist-hero")
+                .when_some(pin, |hero, pin| hero.pin(pin))
+                .relative()
+                .flex_none()
+                .h(height - inset)
+                .mb_6()
+                .child(
+                    div()
+                        .absolute()
+                        .top(-inset)
+                        .left(-inset)
+                        .right(-inset)
+                        .h(height)
+                        .overflow_hidden()
+                        .fade_edges(Pixels::ZERO, height * POSTER_FADE)
+                        .child(
+                            Artwork::new(Some(cover))
+                                .size(across)
+                                .wide(height)
+                                .overlay(),
+                        )
+                        .child(div().absolute().inset_0().bg(linear_gradient(
+                            180.,
+                            linear_color_stop(theme.background.opacity(0.), POSTER_SHADE_FROM),
+                            linear_color_stop(theme.background.opacity(BANNER_SHADE), 1.),
+                        ))),
+                )
+                .children(overflow.map(|overflow| {
+                    div()
+                        .absolute()
+                        .top_0()
+                        .right_0()
+                        .rounded_full()
+                        .bg(theme.background.opacity(POSTER_MENU_SHADE))
+                        .child(overflow)
+                }))
+                .child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .bottom_0()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .id("artist-hero-title")
+                                .role(Role::Heading)
+                                .aria_level(1)
+                                .aria_label(title.clone())
+                                .max_w_full()
+                                .truncate()
+                                .text_size(theme.text(Text::Display))
+                                .font_weight(FontWeight::BOLD)
+                                .child(title),
+                        )
+                        .children(meta)
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .pt_1()
+                                .child(shuffle)
+                                .child(play)
+                                .children(self.favorite_button(cx)),
+                        ),
+                )
+                .into_any_element();
+        }
+
+        let actions = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(play)
+            .child(shuffle)
+            .children(self.favorite_button(cx))
+            .children(overflow);
 
         let view_cover = cover.clone().map(|cover| {
             let view = self.me.clone();
@@ -1332,7 +1426,13 @@ impl Render for ArtistView {
 
         let listed = self.mode == Mode::List;
         let release_padding = self.release_padding;
-        let head = self.header(cx);
+        let poster = !Chrome::room(window, cx).fits(Room::Roomy)
+            && self
+                .detail
+                .read(cx)
+                .artist()
+                .is_some_and(|artist| artist.cover_large.is_some());
+        let head = self.header(poster, cx);
         let cover = theme.metrics.cover;
         let banner_shown = self
             .detail
@@ -1346,8 +1446,14 @@ impl Render for ArtistView {
                 .min(cover * BANNER_RISE_MOST),
             false => cover * BANNER_RISE_WASH,
         };
-        let rise = snapped(rise, window);
-        let banner = self.banner(inset, margin, inset + rise + cover, inset + rise, cx);
+        let rise = match poster {
+            true => Pixels::ZERO,
+            false => snapped(rise, window),
+        };
+        let banner = match poster {
+            true => None,
+            false => self.banner(inset, margin, inset + rise + cover, inset + rise, cx),
+        };
         let tracks = match self.mode {
             Mode::Grid => self.popular(cx),
             Mode::List => self.listed(cx),

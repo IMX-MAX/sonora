@@ -730,6 +730,23 @@ impl DeezerClient {
 
     /// One `deezer.pageProfile` tab: the user's favorite albums, artists or playlists,
     /// including the private ones the public api hides.
+    /// The artist's biography off their gateway page, the one place Deezer serves it. An artist
+    /// without one, or a page that will not load, answers `None` so the rest still shows.
+    async fn biography(&self, artist_id: &str) -> Option<String> {
+        let page = self
+            .gw(
+                "deezer.pageArtist",
+                json!({ "art_id": artist_id, "lang": "en", "tab": 0 }),
+            )
+            .await
+            .ok()?;
+        ["BIO", "RESUME"]
+            .into_iter()
+            .filter_map(|field| wire::text(&page, &["BIO", field]))
+            .map(wire::prose)
+            .find(|text| !text.is_empty())
+    }
+
     async fn profile_tab(&self, tab: &str) -> Result<Vec<Value>> {
         let user_id = self.user_id().await;
         let results = self
@@ -1051,10 +1068,11 @@ impl MusicApi for DeezerClient {
         let detail_path = format!("/artist/{artist}");
         let top_path = format!("/artist/{artist}/top?limit=20");
         let albums_path = format!("/artist/{artist}/albums?limit={DISCOGRAPHY}");
-        let (detail, top, albums) = tokio::join!(
+        let (detail, top, albums, biography) = tokio::join!(
             self.public(&detail_path),
             self.public(&top_path),
             self.public(&albums_path),
+            self.biography(artist_id),
         );
         let detail = detail.context("cannot load the artist")?;
         let own = ArtistRef {
@@ -1072,7 +1090,7 @@ impl MusicApi for DeezerClient {
                 .and_then(Value::as_str)
                 .map(str::to_owned),
             banner: None,
-            biography: None,
+            biography,
             monthly_listeners: wire::number(&detail, &["nb_fan"]),
             followers: None,
             top_tracks: top.map(|page| wire::track_list(&page)).unwrap_or_default(),
@@ -1188,10 +1206,10 @@ impl MusicApi for DeezerClient {
     }
 
     async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {
-        let detail = self
-            .public(&format!("/artist/{}", escape::component(artist_id)))
-            .await
-            .context("cannot load the artist")?;
+        let detail_path = format!("/artist/{}", escape::component(artist_id));
+        let (detail, biography) =
+            tokio::join!(self.public(&detail_path), self.biography(artist_id));
+        let detail = detail.context("cannot load the artist")?;
         Ok(ArtistProfile {
             name: wire::text(&detail, &["name"])
                 .unwrap_or_default()
@@ -1201,7 +1219,7 @@ impl MusicApi for DeezerClient {
                 .or_else(|| detail.get("picture_big"))
                 .and_then(Value::as_str)
                 .map(str::to_owned),
-            biography: None,
+            biography,
         })
     }
 

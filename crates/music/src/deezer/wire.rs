@@ -37,6 +37,46 @@ pub fn text<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
     keys.iter().find_map(|key| value.get(key))?.as_str()
 }
 
+/// A biography as plain text. Deezer sends it as HTML, so paragraphs and line breaks become
+/// blank lines, every other tag is dropped and the few entities it uses are spelled out.
+pub fn prose(html: &str) -> String {
+    let mut plain = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(open) = rest.find('<') {
+        plain.push_str(&rest[..open]);
+        let Some(close) = rest[open..].find('>') else {
+            rest = "";
+            break;
+        };
+        let tag = rest[open + 1..open + close].trim_start_matches('/');
+        let name = tag.split(|c: char| !c.is_ascii_alphanumeric()).next();
+        if matches!(name, Some("p" | "br" | "div")) {
+            plain.push('\n');
+        }
+        rest = &rest[open + close + 1..];
+    }
+    plain.push_str(rest);
+    let plain = [
+        ("&nbsp;", " "),
+        ("&quot;", "\""),
+        ("&#39;", "'"),
+        ("&apos;", "'"),
+        ("&lt;", "<"),
+        ("&gt;", ">"),
+        ("&amp;", "&"),
+    ]
+    .iter()
+    .fold(plain, |text, (entity, spelled)| {
+        text.replace(entity, spelled)
+    });
+    plain
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 /// The first fractional number under any of `keys`, spelled as a number or as a string.
 pub fn decimal(value: &Value, keys: &[&str]) -> Option<f64> {
     keys.iter().find_map(|key| {

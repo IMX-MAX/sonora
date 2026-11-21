@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Deezer artist pages show the artist's biography.
 - Swipe a song sideways in the queue on a touch screen to remove it, or hold it and drag it to a new place.
 - Search on Android opens quick search, as Ctrl+K does.
 - Save a song as an MP3 or M4A from its menu: hold it on a phone, right-click it on a desktop. The file goes to Music/Sonora, on the phone's shared storage or in your Music folder, with its title, artist, album and cover.
@@ -23,6 +24,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- On a phone, an artist page opens with the artist's picture as a banner, with the name and the play, shuffle and favorite buttons centred over it.
 - Wordless stretches in lyrics show three dots instead of music notes.
 - Sonora on Android fills the screen to the bottom edge, with the player bar and the fullscreen player drawn behind the gesture bar.
 - The back and forward buttons and the swipe to go back are gone on Android, where the system back does it.
