@@ -70,6 +70,13 @@ impl Workspace {
         self.sidebar.update(cx, |sidebar, cx| sidebar.toggle(cx));
     }
 
+    /// Closes the left sidebar when it floats over the page.
+    pub fn collapse_sidebar(&self, cx: &mut Context<Self>) {
+        if self.sidebar.read(cx).overlays() {
+            self.sidebar.update(cx, |sidebar, cx| sidebar.toggle(cx));
+        }
+    }
+
     /// Closes a sidebar that lies over the page, the right one first, and says whether one was
     /// open. The system back button does this before it turns the page.
     pub fn close_overlay(&self, window: &Window, cx: &mut Context<Self>) -> bool {
@@ -171,7 +178,7 @@ impl Render for Workspace {
         let overlay_width = self.sidebar.read(cx).overlay_width();
         Chrome::publish(left, right, reserved, cx);
         let covered = self.sidebar_right.read(cx).covers_content(window);
-        let overlay = self.sidebar.read(cx).overlays();
+        let overlay = self.sidebar.read(cx).floats();
         let bar_height = PlayerBar::height(window, cx);
         let underlap = self.settings.read(cx).player_bar_translucent();
         let bottom = match underlap {

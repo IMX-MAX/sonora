@@ -95,6 +95,10 @@ pub(crate) struct SidebarLeft {
     /// Whether a frame has been drawn yet.
     adapted: bool,
     openings: usize,
+    /// How many times an overlaid sidebar has closed, which keys the slide it closes with, and
+    /// the wait that ends that slide. The sidebar stays drawn until the wait is over.
+    closings: usize,
+    retreat: Option<gpui::Task<()>>,
     open: bool,
     /// Whether the listener folded the sidebar down to the rail.
     rail: bool,
@@ -161,6 +165,8 @@ impl SidebarLeft {
             shown: false,
             adapted: false,
             openings: 0,
+            closings: 0,
+            retreat: None,
             open,
             rail,
             rail_width: Pixels::ZERO,
@@ -233,11 +239,40 @@ impl SidebarLeft {
         }
     }
 
+    /// Whether the sidebar is drawn over the content: an overlaid one, open or still sliding
+    /// shut.
+    pub fn floats(&self) -> bool {
+        self.overlays() || self.retreats()
+    }
+
+    /// Whether a closed overlaid sidebar is still sliding out of view.
+    fn retreats(&self) -> bool {
+        self.cramped && !self.is_open() && self.retreat.is_some()
+    }
+
+    /// Starts the slide an overlaid sidebar closes with. Call it once the sidebar has closed.
+    fn retreat(&mut self, cx: &mut Context<Self>) {
+        if !self.cramped || self.is_open() || !ui::motion::animates(cx) {
+            return;
+        }
+        self.closings += 1;
+        self.retreat = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Motion::Slow.span()).await;
+            this.update(cx, |this, cx| {
+                this.retreat = None;
+                // The workspace places the sidebar, so it has to draw again too.
+                cx.refresh_windows();
+            })
+            .ok();
+        }));
+    }
+
     fn dismiss(&mut self, cx: &mut Context<Self>) {
         if !self.overlays() {
             return;
         }
         self.forced = Some(false);
+        self.retreat(cx);
         cx.notify();
     }
 
@@ -250,7 +285,13 @@ impl SidebarLeft {
 
     pub fn toggle(&mut self, cx: &mut Context<Self>) {
         match self.cramped {
-            true => self.forced = Some(!self.is_open()),
+            true => {
+                self.forced = Some(!self.is_open());
+                match self.is_open() {
+                    true => self.retreat = None,
+                    false => self.retreat(cx),
+                }
+            }
             false => {
                 self.open = !self.open;
                 self.persist(cx);
@@ -821,7 +862,8 @@ impl Render for SidebarLeft {
         let mut rows = self.navigation(cx);
         rows.extend(self.pins(window, cx));
 
-        let overlaid = self.overlays();
+        let overlaid = self.floats();
+        let retreating = self.retreats().then_some(self.closings);
         let rail = self.folded();
         let open = self.is_open();
         // The first frame draws a sidebar that was already open, so only a later opening slides.
@@ -865,7 +907,7 @@ impl Render for SidebarLeft {
                 }
                 cx.notify();
             }))
-            .when(!self.is_open(), |this| this.hidden())
+            .when(!open && retreating.is_none(), |this| this.hidden())
             .when(!theme.transparent, |this| this.bg(sidebar_bg))
             .border_color(sidebar_border)
             // A sidebar dragged shut keeps only its edge until the drag lets go.
@@ -913,8 +955,20 @@ impl Render for SidebarLeft {
                     ),
             )
             .children(self.menu(cx));
-        let panel = match sliding {
-            Some(opening) => panel
+        let panel = match (sliding, retreating) {
+            (_, Some(closing)) => panel
+                .with_animation(
+                    ("sidebar-left-closing", closing),
+                    gpui::Animation::new(Motion::Slow.span())
+                        .with_easing(ui::motion::ease_in_out_cubic),
+                    move |panel, gone| {
+                        panel
+                            .layer_translate(point(-travel * gone, Pixels::ZERO))
+                            .opacity((1. - gone).clamp(0., 1.))
+                    },
+                )
+                .into_any_element(),
+            (Some(opening), None) => panel
                 .with_animation(
                     ("sidebar-left-opening", opening),
                     // Slow off the edge, quick through the middle and slow into place.
@@ -927,7 +981,7 @@ impl Render for SidebarLeft {
                     },
                 )
                 .into_any_element(),
-            None => panel.into_any_element(),
+            (None, None) => panel.into_any_element(),
         };
 
         match overlaid {
@@ -938,7 +992,8 @@ impl Render for SidebarLeft {
                 .left_0()
                 .right_0()
                 .bottom_0()
-                .child(
+                // A sidebar sliding shut no longer holds taps back from the page.
+                .children(open.then(|| {
                     Shield::new("sidebar-shield")
                         .absolute()
                         .top_0()
@@ -948,8 +1003,8 @@ impl Render for SidebarLeft {
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, _: &MouseDownEvent, _, cx| this.dismiss(cx)),
-                        ),
-                )
+                        )
+                }))
                 .child(panel)
                 .into_any_element(),
         }

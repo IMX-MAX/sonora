@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Save a song as an MP3 or M4A from its menu: hold it on a phone, right-click it on a desktop. The file goes to Music/Sonora, on the phone's shared storage or in your Music folder, with its title, artist, album and cover.
 - Choose SF Pro Display under Settings, Appearance, Typeface in builds that carry it.
 - Pick Tokyo Night (Night, Storm and Day), Everforest (Dark and Light), One Dark, Kanagawa, Monokai, OLED or Pink under Settings, Appearance, Theme.
-- The sidebar slides in when it opens.
+- The sidebar slides in when it opens and out when it closes, and closes once a quick search result is picked.
 - The Android back button and gesture close what is open, then go back a page, and leave the app from the first page.
 - Words held for a long time glow letter by letter in synced lyrics.
 - The screen stays awake while the fullscreen player is open on Android.

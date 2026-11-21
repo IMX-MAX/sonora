@@ -85,6 +85,8 @@ pub(crate) enum PowerbarEvent {
     /// Open the search page with the full results for this query, or as it was left when the
     /// query is empty.
     Search(String),
+    /// A result was chosen, so whatever floats over the page gets out of its way.
+    Chose,
 }
 
 struct Installed(Entity<Powerbar>);
@@ -295,7 +297,10 @@ impl Powerbar {
     /// opens the search page for what is typed.
     fn activate(&mut self, _: &Submit, window: &mut Window, cx: &mut Context<Self>) {
         match self.target() {
-            Some(hit) => enter_hit(&hit, &self.playback, cx),
+            Some(hit) => {
+                enter_hit(&hit, &self.playback, cx);
+                cx.emit(PowerbarEvent::Chose);
+            }
             None => {
                 let query = self.input.read(cx).text().trim().to_owned();
                 cx.emit(PowerbarEvent::Search(query));
@@ -392,7 +397,10 @@ impl Powerbar {
                     total,
                     move |_, window, cx| {
                         enter_hit(&opened, &entered, cx);
-                        open_entity.update(cx, |this, cx| this.close(window, cx));
+                        open_entity.update(cx, |this, cx| {
+                            this.close(window, cx);
+                            cx.emit(PowerbarEvent::Chose);
+                        });
                     },
                     move |_, window, cx| {
                         toggle_hit(&played, &playback, cx);

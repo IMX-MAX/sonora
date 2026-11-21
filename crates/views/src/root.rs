@@ -270,6 +270,10 @@ impl Root {
         let powerbar = Powerbar::entity(quick, playback.clone(), cx);
         cx.subscribe(&powerbar, |this, _, event, cx| match event {
             PowerbarEvent::Search(query) => this.search_for(query, cx),
+            PowerbarEvent::Chose => this
+                .shells
+                .workspace
+                .update(cx, |workspace, cx| workspace.collapse_sidebar(cx)),
         })
         .detach();
         let genres = cx.new(|cx| Genres::new(session.clone(), io.clone(), cx));
