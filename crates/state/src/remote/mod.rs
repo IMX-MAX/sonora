@@ -12,6 +12,8 @@ use crate::{Cover, Io, Playback, PlaybackState, Queue, Repeat, Sonora, join};
 
 #[cfg(target_os = "android")]
 mod android;
+#[cfg(target_os = "android")]
+pub(crate) use android::save_to_music;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod mpris;
 #[cfg(any(target_os = "macos", target_os = "windows"))]

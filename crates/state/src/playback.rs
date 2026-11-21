@@ -2896,6 +2896,18 @@ impl Playback {
         }
     }
 
+    /// Decodes track `id` into a file at `to` through the engine it plays on. `None` while that
+    /// engine is not up.
+    pub fn export(
+        &self,
+        id: &str,
+        format: music::export::Format,
+        to: std::path::PathBuf,
+    ) -> Option<BoxFuture<'static, Result<()>>> {
+        self.engine_for(id)
+            .map(|engine| engine.export(id, format, to))
+    }
+
     /// Removes the download of a streaming track.
     pub fn discard(&self, id: &str) {
         if let Some(engine) = self.engine.as_deref() {

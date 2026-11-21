@@ -228,6 +228,13 @@ enum Command {
         ids: Vec<String>,
         done: oneshot::Sender<()>,
     },
+    /// Decode a whole track into a file of its own, and say how that went.
+    Export {
+        id: String,
+        format: crate::export::Format,
+        to: std::path::PathBuf,
+        done: oneshot::Sender<Result<()>>,
+    },
 }
 
 /// What the audio thread is told to do. Everything that touches the network has happened by the
@@ -330,6 +337,28 @@ impl Player for Handle {
                 .context("cannot reach the playback engine"),
             None => Err(anyhow!("this provider cannot download")),
         };
+        Box::pin(async move {
+            sent?;
+            answer.await.context("the playback engine stopped")?
+        })
+    }
+
+    fn export(
+        &self,
+        track_id: &str,
+        format: crate::export::Format,
+        to: std::path::PathBuf,
+    ) -> BoxFuture<'static, Result<()>> {
+        let (done, answer) = oneshot::channel();
+        let sent = self
+            .commands
+            .send(Command::Export {
+                id: track_id.to_owned(),
+                format,
+                to,
+                done,
+            })
+            .context("cannot reach the playback engine");
         Box::pin(async move {
             sent?;
             answer.await.context("the playback engine stopped")?
@@ -687,6 +716,17 @@ async fn engine_loop<F: Fetch>(
                         let fetch = fetch.clone();
                         tokio::spawn(async move {
                             done.send(download(&*fetch, &id, &progress).await).ok();
+                        });
+                    }
+                    Command::Export {
+                        id,
+                        format,
+                        to,
+                        done,
+                    } => {
+                        let fetch = fetch.clone();
+                        tokio::spawn(async move {
+                            done.send(export(fetch, id, format, to).await).ok();
                         });
                     }
                     Command::Unseal { ids, done } => {
@@ -1442,6 +1482,29 @@ async fn download<F: Fetch>(fetch: &F, id: &str, progress: &Fraction) -> Result<
     fetched?;
     ensure!(shelf.holds(id), "the download of {id} did not finish");
     Ok(())
+}
+
+/// Fetches all of track `id` the way a play would, then decodes it from the start into `to` on
+/// a blocking thread.
+async fn export<F: Fetch>(
+    fetch: Arc<F>,
+    id: String,
+    format: crate::export::Format,
+    to: std::path::PathBuf,
+) -> Result<()> {
+    if let Some(shelf) = fetch.shelf() {
+        shelf.settle().await;
+    }
+    let loaded = fetch.load(&id).await?;
+    fetch.downloaded(&loaded).await;
+    tokio::task::spawn_blocking(move || {
+        let source = fetch
+            .open(&id, &loaded, Duration::ZERO)
+            .context("cannot decode the track")?;
+        crate::export::encode(source, format, &to)
+    })
+    .await
+    .context("the export stopped")?
 }
 
 /// Rewrites downloads `ids` that are still sealed as plain files, one at a time on a blocking

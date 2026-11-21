@@ -8,6 +8,7 @@ mod discord;
 mod downloads;
 mod drm;
 mod equalizer;
+pub mod export;
 mod genre;
 mod history;
 mod home;

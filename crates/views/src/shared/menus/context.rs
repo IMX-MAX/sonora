@@ -471,6 +471,32 @@ impl ItemMenu {
             ),
         };
 
+        // Saving a song as a file of its own, for other apps to play. A download stays the way
+        // the provider sent it, for Sonora to stream.
+        let save = match (many, track.id.is_some() && track.playable) {
+            (false, true) => [
+                (
+                    state::export::Format::Mp3,
+                    "save-as-mp3",
+                    "menu-save-as-mp3",
+                ),
+                (
+                    state::export::Format::M4a,
+                    "save-as-m4a",
+                    "menu-save-as-m4a",
+                ),
+            ]
+            .into_iter()
+            .map(|(format, id, label)| {
+                let track = track.clone();
+                MenuItem::new(id, i18n::lookup(label, None))
+                    .icon("icons/download.svg")
+                    .on_click(move |_, _, cx| state::export::save_as(&track, format, cx))
+            })
+            .collect(),
+            _ => Vec::new(),
+        };
+
         let pinnable = (!many).then(|| track.pin()).flatten();
         let edit = (!many && imported).then(|| {
             let track = track.clone();
@@ -513,6 +539,7 @@ impl ItemMenu {
                 add_to_playlist.into_iter().chain(library_action).collect(),
                 vec![next, queue, last],
                 album.into_iter().chain(artist).chain(radio).collect(),
+                save,
                 details
                     .into_iter()
                     .chain(edit)

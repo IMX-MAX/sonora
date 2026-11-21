@@ -13,6 +13,7 @@ pub mod drm;
 pub mod engine;
 pub mod equalizer;
 pub mod escape;
+pub mod export;
 pub mod jellyfin;
 pub mod kugou;
 pub mod link;
@@ -783,6 +784,18 @@ pub trait Player: Send + Sync {
         _progress: Fraction,
     ) -> futures::future::BoxFuture<'static, Result<()>> {
         Box::pin(async { Err(anyhow::anyhow!("this player cannot download")) })
+    }
+
+    /// Decodes all of a track and saves it at `to` as `format`, for other apps to play. The
+    /// future answers once the file is written. A player that cannot decode tracks itself says
+    /// so at once.
+    fn export(
+        &self,
+        _track_id: &str,
+        _format: export::Format,
+        _to: std::path::PathBuf,
+    ) -> futures::future::BoxFuture<'static, Result<()>> {
+        Box::pin(async { Err(anyhow::anyhow!("this provider cannot save songs as files")) })
     }
 
     /// Whether a track has been downloaded.

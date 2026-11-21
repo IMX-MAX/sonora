@@ -207,6 +207,50 @@ fn register_natives() -> jni::errors::Result<()> {
     })
 }
 
+/// Copies the file at `path` into the phone's shared Music/Sonora folder as `name`, through
+/// MediaStore where Android has it, and answers where it went. It blocks on the copy, so call
+/// it off the main thread.
+pub(crate) fn save_to_music(path: &std::path::Path, name: &str, mime: &str) -> Result<String> {
+    let ctx = ndk_context::android_context();
+    let vm_ptr = ctx.vm().cast::<jni::sys::JavaVM>();
+    let app_ptr = ctx.context() as jni::sys::jobject;
+    anyhow::ensure!(
+        !vm_ptr.is_null() && !app_ptr.is_null(),
+        "the android context is unavailable"
+    );
+    let vm = unsafe { JavaVM::from_raw(vm_ptr) };
+    let answer = vm
+        .attach_current_thread(|env| -> jni::errors::Result<String> {
+            let cls = activity_class(env, app_ptr)?;
+            ensure_registered(env, cls)?;
+            let jpath = env.new_string(path.to_string_lossy())?;
+            let jname = env.new_string(name)?;
+            let jmime = env.new_string(mime)?;
+            let saved = env
+                .call_static_method(
+                    cls,
+                    jni_str!("saveToMusic"),
+                    jni_sig!((java.lang.String, java.lang.String, java.lang.String) -> java.lang.String),
+                    &[
+                        JValue::from(&jpath),
+                        JValue::from(&jname),
+                        JValue::from(&jmime),
+                    ],
+                )?
+                .l()?;
+            if saved.is_null() {
+                return Ok(String::from("!the save did not answer"));
+            }
+            let saved = env.cast_local::<JString>(saved)?;
+            saved.try_to_string(env)
+        })
+        .map_err(|error| anyhow::anyhow!("cannot reach Android: {error:#}"))?;
+    match answer.strip_prefix('!') {
+        Some(error) => Err(anyhow::anyhow!("{error}")),
+        None => Ok(answer),
+    }
+}
+
 fn with_activity<F>(call: F)
 where
     F: FnOnce(&mut Env<'_>, &JClass<'_>) -> jni::errors::Result<()>,
