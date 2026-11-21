@@ -10,9 +10,9 @@ use input::{POWERBAR_CONTEXT, PowerbarDetails};
 use router::{Destination, navigate};
 use state::{Hit, Origin, Playback, Search};
 use ui::{
-    ActiveTheme as _, Button, Card, Cascade, Dismiss, Input, Kbd, SelectNext, SelectPrevious,
-    Spinner, Sprung, Submit, Text, Unfold, blurring, corners, effects, eyebrow, popover_fill,
-    snapped, spoken_vacant,
+    ActiveTheme as _, Button, Card, Cascade, Dismiss, Input, SelectNext, SelectPrevious, Spinner,
+    Sprung, Submit, Text, Unfold, blurring, corners, effects, eyebrow, popover_fill, snapped,
+    spoken_vacant,
 };
 
 use crate::screens::search::hit_card;
@@ -456,52 +456,6 @@ impl Powerbar {
         }
         Some(spoken_vacant("powerbar-empty", t!("search-no-matches"), cx).into_any_element())
     }
-
-    /// The row of key hints along the foot of the panel.
-    /// The Enter hint names what Enter does to the result it would act on, or says it searches
-    /// when the cursor is in the field. The Ctrl+Enter hint shows only for a song, since for
-    /// anything else Enter already opens it.
-    fn hints(&self, cx: &App) -> impl IntoElement {
-        let theme = cx.theme();
-        let target = self.target();
-        let song = matches!(target, Some(Hit::Song(_)));
-        let enter = match target {
-            Some(Hit::Song(_)) => t!("common-play"),
-            Some(_) => t!("powerbar-open"),
-            None => t!("search-submit"),
-        };
-        let hint = |id: &'static str, keystroke: &'static str, label: SharedString| {
-            div()
-                .flex()
-                .flex_none()
-                .items_center()
-                .gap_1p5()
-                .child(Kbd::new(keystroke).spoken(id))
-                .child(label)
-        };
-
-        div()
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_x_4()
-            .gap_y_1()
-            .px(theme.metrics.pad * 2.)
-            .py(theme.metrics.pad)
-            .border_t_1()
-            .border_color(theme.border)
-            .text_size(theme.text(Text::Small))
-            .text_color(theme.muted_foreground)
-            .child(hint("powerbar-hint-enter", "enter", enter))
-            .when(song, |this| {
-                this.child(hint(
-                    "powerbar-hint-details",
-                    "secondary-enter",
-                    t!("powerbar-song"),
-                ))
-            })
-            .child(hint("powerbar-hint-close", "escape", t!("common-dismiss")))
-    }
 }
 
 impl Render for Powerbar {
@@ -569,10 +523,7 @@ impl Render for Powerbar {
                         .track_scroll(&scroll)
                         .children(results),
                 ),
-            })
-            // The key hints only make sense with something to act on, so they arrive with the
-            // first results and ride the same growing height.
-            .when(!self.hits.is_empty(), |this| this.child(self.hints(cx)));
+            });
         let body = self.unfold.wrap(body, empty, window, cx);
         let height = self.unfold.height();
 
