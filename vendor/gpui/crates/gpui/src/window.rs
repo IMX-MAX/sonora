@@ -6241,10 +6241,15 @@ impl Window {
         let old_modality = self.last_input_modality;
         self.last_input_modality = match &event {
             PlatformInput::KeyDown(_) => InputModality::Keyboard,
-            PlatformInput::MouseMove(_) | PlatformInput::MouseDown(_)
-                if cfg!(not(target_os = "android")) =>
-            {
-                InputModality::Mouse
+            // Android has no pointer: its platform layer turns a tap into a mouse move, press
+            // and release, so those count as touch there. Without this a key press, the
+            // keyboard's Enter or the system back button included, would leave the window in
+            // keyboard modality, where nothing counts as hovered and every tap is ignored.
+            PlatformInput::MouseMove(_) | PlatformInput::MouseDown(_) => {
+                match cfg!(target_os = "android") {
+                    true => InputModality::Touch,
+                    false => InputModality::Mouse,
+                }
             }
             PlatformInput::Touch(_) => InputModality::Touch,
             _ => self.last_input_modality,

@@ -34,6 +34,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Music pauses on Android when headphones are unplugged or a Bluetooth headset disconnects.
 - Taps work again on Android after the keyboard closes, such as after picking a quick search result, and words typed with suggestions no longer repeat.
 - Quick search no longer lists keyboard keys under its results.
+- Taps keep working on Android after a key press, such as the keyboard's enter in quick search.
 - Typing in search no longer freezes Sonora for a moment with a large library.
 - Pinned items stay in the sidebar while Sonora is offline.
 
