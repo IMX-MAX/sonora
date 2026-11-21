@@ -22,8 +22,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Wordless stretches in lyrics show three dots instead of music notes.
 - The back and forward buttons and the swipe to go back are gone on Android, where the system back does it.
-- The fullscreen player on a phone has larger, brighter controls: a seek bar across the whole screen with the times under it, a row of big transport buttons around a filled play button, and the cover, lyrics and queue tabs centred along the bottom.
-- The fullscreen player's controls stay up for four seconds after a touch on a phone instead of one.
 
 ### Fixed
 

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use gpui::accesskit::Toggled;
 use gpui::prelude::*;
-use gpui::{App, Entity, Global, Hsla, SharedString, div};
+use gpui::{App, Entity, Global, SharedString, div};
 use i18n::t;
 use state::{Elsewhere, Playback, Repeat, Sonora};
 use ui::{ActiveTheme as _, Button, Side, clock};
@@ -149,43 +149,16 @@ pub(crate) fn like(track: Option<&music::Track>, playback: &Entity<Playback>, cx
 /// the flat player bar, the blur would show nothing.
 pub(crate) fn transport(playback: &Entity<Playback>, big: bool, cx: &App) -> impl IntoElement {
     let frosted = big && ambient::shown(cx);
-    let muted = cx.theme().muted_foreground;
 
     div()
         .flex()
         .items_center()
         .gap_2()
-        .child(shuffle(playback, frosted, muted, cx))
+        .child(shuffle(playback, frosted, cx))
         .child(previous(playback, frosted, cx))
         .child(toggle(playback, big, frosted, cx))
         .child(next(playback, frosted, cx))
-        .child(repeat(playback, frosted, muted, cx))
-}
-
-/// The transport of the fullscreen player on a narrow screen: touch-sized buttons spread
-/// across the whole row around a filled play button, with shuffle and repeat at the
-/// foreground's quiet shade while off rather than the theme's grey.
-pub(crate) fn touch_transport(playback: &Entity<Playback>, cx: &App) -> impl IntoElement {
-    let theme = *cx.theme();
-    let frosted = ambient::shown(cx);
-    let off = crate::shared::quiet(&theme);
-
-    div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .w_full()
-        .child(shuffle(playback, frosted, off, cx).touch())
-        .child(previous(playback, frosted, cx).touch())
-        .child(
-            toggle(playback, true, false, cx)
-                .touch()
-                .primary()
-                .size(theme.metrics.list_row)
-                .rounded_full(),
-        )
-        .child(next(playback, frosted, cx).touch())
-        .child(repeat(playback, frosted, off, cx).touch())
+        .child(repeat(playback, frosted, cx))
 }
 
 /// A compact transport group for narrow stacked bars, keeping previous, play/pause and next.
@@ -227,8 +200,7 @@ pub(crate) fn toggle(playback: &Entity<Playback>, big: bool, frosted: bool, cx: 
         })
 }
 
-/// `off` is the icon's colour while shuffle is off.
-fn shuffle(playback: &Entity<Playback>, frosted: bool, off: Hsla, cx: &App) -> Button {
+fn shuffle(playback: &Entity<Playback>, frosted: bool, cx: &App) -> Button {
     let theme = *cx.theme();
     let on = playback.read(cx).shown_shuffle(cx);
     let playback = playback.clone();
@@ -243,15 +215,14 @@ fn shuffle(playback: &Entity<Playback>, frosted: bool, off: Hsla, cx: &App) -> B
         .tooltip_above("player-shuffle")
         .tint(match on {
             true => theme.primary,
-            false => off,
+            false => theme.muted_foreground,
         })
         .on_click(move |_, _, cx| {
             playback.update(cx, |playback, cx| playback.toggle_shuffle(cx));
         })
 }
 
-/// `off` is the icon's colour while nothing repeats.
-fn repeat(playback: &Entity<Playback>, frosted: bool, off: Hsla, cx: &App) -> Button {
+fn repeat(playback: &Entity<Playback>, frosted: bool, cx: &App) -> Button {
     let theme = *cx.theme();
     let repeat = playback.read(cx).shown_repeat(cx);
     let playback = playback.clone();
@@ -272,7 +243,7 @@ fn repeat(playback: &Entity<Playback>, frosted: bool, off: Hsla, cx: &App) -> Bu
             Repeat::One => "player-repeat-one",
         })
         .tint(match repeat {
-            Repeat::Off => off,
+            Repeat::Off => theme.muted_foreground,
             _ => theme.primary,
         })
         .on_click(move |_, _, cx| {
