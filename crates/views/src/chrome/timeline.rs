@@ -10,6 +10,7 @@ use i18n::t;
 use state::{AppSettings, Playback, Sonora};
 use ui::{Scrubber, ScrubberState, clock, tabular};
 
+use crate::chrome::player_bar::PlayerBar;
 use crate::shared::transport::{clock_ems, end_clock, fraction, moved};
 
 /// The window y of the middle of the seek line as the player bar last painted it.
@@ -18,7 +19,8 @@ struct SeekLine(Option<Pixels>);
 
 impl Global for SeekLine {}
 
-/// The player bar's elapsed clock, seek bar and remaining or total clock. It follows the
+/// The player bar's elapsed clock, seek bar and remaining or total clock; the slim bar draws
+/// the seek bar alone. It follows the
 /// position on its own and redraws only when a clock reads differently or the bar would move by
 /// a device pixel, so the rest of the player bar does not draw on every position report.
 pub(crate) struct Timeline {
@@ -142,6 +144,8 @@ impl Render for Timeline {
             .or(self.pending)
             .map(|at| (at, clock(total.mul_f32(at))));
 
+        let slim = PlayerBar::slim(window, cx);
+
         let clock_label = |id: &'static str, text: SharedString, align_end: bool| {
             ui::spoken(id, text)
                 .w(clock_width)
@@ -162,7 +166,9 @@ impl Render for Timeline {
             .items_center()
             .gap_2()
             .w_full()
-            .child(clock_label("player-elapsed", clock(elapsed), true))
+            .when(!slim, |this| {
+                this.child(clock_label("player-elapsed", clock(elapsed), true))
+            })
             .child(
                 div().flex_1().min_w_0().child(
                     Scrubber::new(&self.seek, progress)
@@ -184,13 +190,15 @@ impl Render for Timeline {
                         ),
                 ),
             )
-            .child(match time_left {
-                true => {
-                    let end = end_clock(elapsed, total, time_left);
-                    clock_label("player-time-left", end.text, false)
-                        .when_some(end.spoken, |this, spoken| this.aria_value(spoken))
-                }
-                false => clock_label("player-duration", clock(total), false),
+            .when(!slim, |this| {
+                this.child(match time_left {
+                    true => {
+                        let end = end_clock(elapsed, total, time_left);
+                        clock_label("player-time-left", end.text, false)
+                            .when_some(end.spoken, |this, spoken| this.aria_value(spoken))
+                    }
+                    false => clock_label("player-duration", clock(total), false),
+                })
             })
             .child(
                 canvas(

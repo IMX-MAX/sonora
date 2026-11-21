@@ -325,7 +325,9 @@ impl PlayerBar {
         let theme = cx.theme();
         let layout = self.settings.read(cx).player_bar_layout();
         let artwork = ui::snapped(
-            match layout == PlayerBarLayout::Compact && !Self::stacked(window, layout) {
+            match layout == PlayerBarLayout::Compact
+                && (Self::narrow(window) || !Self::stacked(window, layout))
+            {
                 true => theme.metrics.thumb,
                 false => theme.metrics.row,
             },
@@ -549,6 +551,24 @@ impl PlayerBar {
         !Chrome::window_room(window).fits(room)
     }
 
+    /// Whether the window is as narrow as a phone held upright, where each layout stacks in its
+    /// own way rather than sharing one.
+    fn narrow(window: &Window) -> bool {
+        !Chrome::window_room(window).fits(Room::Roomy)
+    }
+
+    /// Whether the bar is the compact layout on a narrow window: one row under a seek line
+    /// that draws without its clocks.
+    pub(crate) fn slim(window: &Window, cx: &gpui::App) -> bool {
+        Self::narrow(window)
+            && Sonora::global(cx).settings.read(cx).player_bar_layout() == PlayerBarLayout::Compact
+    }
+
+    /// How tall the strip that holds the slim bar's seek line is.
+    fn seek_strip(cx: &gpui::App) -> Pixels {
+        cx.theme().metrics.pad * 2.
+    }
+
     /// How far below its place in a full-height bar the fullscreen button sits, which is where
     /// a stacked or compact bar puts it. The fullscreen player drops its own corner by as
     /// much, so the button stays under the pointer when the player opens and closes.
@@ -556,10 +576,18 @@ impl PlayerBar {
         let theme = *cx.theme();
         let layout = Sonora::global(cx).settings.read(cx).player_bar_layout();
         let spare = theme.metrics.player_bar - Self::height(window, cx);
-        let drop = match Self::stacked(window, layout) {
+        let gap = window.rem_size() * STACK_GAP;
+        let drop = match (Self::stacked(window, layout), Self::narrow(window), layout) {
+            // The button's row fills what the seek strip above it leaves.
+            (true, true, PlayerBarLayout::Compact) => spare + Self::seek_strip(cx),
+            // The button's row is centred under the cover's row, the transport's row and the
+            // gaps between the three.
+            (true, true, PlayerBarLayout::Centered) => {
+                spare + theme.metrics.row + theme.metrics.control_small + gap * 2.
+            }
             // The button's row is centred under the cover's row and the gap between the two.
-            true => spare + theme.metrics.row + window.rem_size() * STACK_GAP,
-            false => spare,
+            (true, ..) => spare + theme.metrics.row + gap,
+            (false, ..) => spare,
         };
         ui::snapped((drop / 2.).max(Pixels::ZERO), window)
     }
@@ -568,10 +596,18 @@ impl PlayerBar {
     pub(crate) fn height(window: &Window, cx: &gpui::App) -> Pixels {
         let theme = *cx.theme();
         let layout = Sonora::global(cx).settings.read(cx).player_bar_layout();
+        let narrow = Self::narrow(window);
         let height = match (Self::stacked(window, layout), layout) {
-            (true, _) if !Chrome::window_room(window).fits(Room::Roomy) => {
-                theme.metrics.player_bar + theme.metrics.pad * 4.
+            (true, PlayerBarLayout::Compact) if narrow => {
+                Self::seek_strip(cx) + theme.metrics.row + theme.metrics.pad
             }
+            (true, PlayerBarLayout::Centered) if narrow => {
+                theme.metrics.player_bar
+                    + theme.metrics.pad * 4.
+                    + theme.metrics.control_small
+                    + window.rem_size() * STACK_GAP
+            }
+            (true, _) if narrow => theme.metrics.player_bar + theme.metrics.pad * 4.,
             (true, _) => theme.metrics.player_bar + theme.metrics.pad * 3.,
             (false, PlayerBarLayout::Compact) => theme.metrics.row + theme.metrics.pad * 2.,
             _ => theme.metrics.player_bar,
@@ -586,6 +622,8 @@ impl Render for PlayerBar {
         let span = Chrome::window_room(window);
         let layout = self.settings.read(cx).player_bar_layout();
         let stacked = Self::stacked(window, layout);
+        let narrow = Self::narrow(window);
+        let slim = Self::slim(window, cx);
         let transparent = self.settings.read(cx).player_bar_translucent();
         let height = Self::height(window, cx);
         // Equal wings keep the title centered while reserving the original volume slider width.
@@ -632,7 +670,7 @@ impl Render for PlayerBar {
                 true => this.px_3(),
                 false => this.px_5(),
             })
-            .when(stacked, |this| this.py_2())
+            .when(stacked && !slim, |this| this.py_2())
             .when_some(radius, |this, radius| this.rounded_b(radius))
             .when_else(
                 transparent,
@@ -655,6 +693,74 @@ impl Render for PlayerBar {
 
         let compact_bar = stacked && !span.fits(Room::Roomy);
         let content = match (stacked, layout) {
+            // One row under the seek line: the small cover, the track and the three buttons a
+            // phone needs within reach.
+            (true, PlayerBarLayout::Compact) if narrow => base
+                .flex_col()
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .w_full()
+                        .h(Self::seek_strip(cx))
+                        .child(seek),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_1()
+                        .min_h_0()
+                        .items_center()
+                        .gap_2()
+                        .w_full()
+                        .child(self.now_playing(true, window, cx))
+                        .child(compact_transport(&self.playback, cx))
+                        .child(buttons)
+                        .child(self.fullscreen_button(cx)),
+                ),
+            // The track centred between the cover and a slot of its width for the panel
+            // buttons, over the whole transport and then the seek bar.
+            (true, PlayerBarLayout::Centered) if narrow => base
+                .flex_col()
+                .justify_center()
+                .gap_2()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .w_full()
+                        .child(self.artwork(window, cx))
+                        .child(self.track_details(true, cx))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_none()
+                                .justify_end()
+                                .min_w(ui::snapped(theme.metrics.row, window))
+                                .child(buttons),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_center()
+                        .w_full()
+                        .h(theme.metrics.control_small)
+                        .child(transport(&self.playback, false, cx)),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .w_full()
+                        .child(div().flex_1().min_w_0().child(seek))
+                        .child(self.fullscreen_button(cx)),
+                ),
             (true, _) => base
                 .flex_col()
                 .justify_center()
