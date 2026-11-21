@@ -42,7 +42,7 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use bytes::Bytes;
@@ -126,13 +126,6 @@ pub struct Vault {
     root: PathBuf,
     /// Where downloads live.
     pinned: PathBuf,
-    /// Where plain downloads go when it can be written, a folder other apps see, such as the
-    /// phone's shared Music folder. Downloads stay in `pinned` until it can be.
-    shared: Option<PathBuf>,
-    /// Whether `shared` has been written to this session.
-    shared_ready: AtomicBool,
-    /// When `shared` was last tried and could not be written.
-    shared_tried: Mutex<Option<Instant>>,
     /// The most the cache may hold, in bytes.
     limit: AtomicU64,
     /// Whether tracks that only played are kept in the cache.
@@ -166,9 +159,6 @@ impl Vault {
         Self {
             root,
             pinned,
-            shared: None,
-            shared_ready: AtomicBool::new(false),
-            shared_tried: Mutex::new(None),
             limit: AtomicU64::new(limit),
             caching: AtomicBool::new(true),
             keys: OnceLock::new(),
@@ -182,60 +172,18 @@ impl Vault {
     /// A vault in Sonora's folders: the cache in `$XDG_CACHE_HOME/sonora/vault` and downloads in
     /// `$XDG_DATA_HOME/sonora/downloads`.
     pub fn standard(limit: u64) -> Self {
-        let mut vault = Self::new(standard_root(), pinned_root(), limit);
-        vault.shared = SHARED_MUSIC.map(PathBuf::from);
-        vault
-    }
-
-    /// The same vault keeping plain downloads in `shared` whenever it can write there.
-    pub fn sharing(mut self, shared: PathBuf) -> Self {
-        self.shared = Some(shared);
-        self
-    }
-
-    /// The folder other apps see that plain downloads go to, or `None` while it cannot be
-    /// written, such as before Sonora may use the phone's storage. A failed try is not repeated
-    /// for a few seconds. The first time it can be written, plain downloads kept in the private
-    /// folder move there on a thread of their own.
-    fn shared_folder(self: &Arc<Self>) -> Option<PathBuf> {
-        let shared = self.shared.as_ref()?;
-        if self.shared_ready.load(Ordering::Acquire) {
-            return Some(shared.clone());
-        }
+        let pinned = pinned_root();
+        if let Some(shared) = LEGACY_SHARED
+            .map(PathBuf::from)
+            .filter(|shared| shared.is_dir())
         {
-            let mut tried = self
-                .shared_tried
-                .lock()
-                .unwrap_or_else(|held| held.into_inner());
-            if tried.is_some_and(|at| at.elapsed() < SHARED_RETRY) {
-                return None;
-            }
-            *tried = Some(Instant::now());
-        }
-        let probe = shared.join(format!(".probe.{}", std::process::id()));
-        let writable = fs::create_dir_all(shared)
-            .and_then(|()| File::create(&probe))
-            .map(|_| fs::remove_file(&probe).ok())
-            .is_ok();
-        if !writable {
-            return None;
-        }
-        if !self.shared_ready.swap(true, Ordering::AcqRel) {
-            log::info!("vault: keeping plain downloads in {}", shared.display());
-            let (from, to) = (self.pinned.clone(), shared.clone());
+            let to = pinned.clone();
             std::thread::Builder::new()
-                .name("vault-share".into())
-                .spawn(move || move_plain(&from, &to))
+                .name("vault-return".into())
+                .spawn(move || bring_back(&shared, &to))
                 .ok();
         }
-        Some(shared.clone())
-    }
-
-    /// The shared folder when it has been written to this session.
-    fn shared_known(&self) -> Option<&Path> {
-        self.shared
-            .as_deref()
-            .filter(|_| self.shared_ready.load(Ordering::Acquire))
+        Self::new(standard_root(), pinned, limit)
     }
 
     /// Tells a player that keeps its own files whether to keep them and how much the whole
@@ -389,12 +337,6 @@ impl Vault {
     /// The folder `provider` keeps its downloads in, made readable by the owner alone when it
     /// does not exist yet, for opening it in a file manager.
     pub fn downloads_of(&self, provider: &str) -> Result<PathBuf> {
-        if let Some(shared) = self.shared_known() {
-            let folder = shared.join(provider);
-            fs::create_dir_all(&folder)
-                .with_context(|| format!("cannot create {}", folder.display()))?;
-            return Ok(folder);
-        }
         let folder = self.pinned.join(provider);
         create_private(&self.pinned)?;
         create_private(&folder)?;
@@ -404,8 +346,7 @@ impl Vault {
     /// What the cache and the downloads take on disk, in bytes, the cache counting the files
     /// players keep for themselves. It walks both folders, so call it off the main thread.
     pub fn usage(&self) -> (u64, u64) {
-        let shared = self.shared_known().map_or(0, footprint);
-        (footprint(&self.root), footprint(&self.pinned) + shared)
+        (footprint(&self.root), footprint(&self.pinned))
     }
 
     /// Whether any sealed download is on disk, whatever key it was sealed under. Plain downloads
@@ -427,13 +368,6 @@ impl Vault {
 
     /// Removes every download.
     pub fn forget_downloads(&self) {
-        if let Some(shared) = self.shared_known() {
-            for shelf in fs::read_dir(shared).into_iter().flatten().flatten() {
-                if shelf.path().join(INDEX).is_dir() {
-                    fs::remove_dir_all(shelf.path()).ok();
-                }
-            }
-        }
         match fs::remove_dir_all(&self.pinned) {
             Ok(()) => log::info!("vault: removed every download"),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -483,9 +417,6 @@ impl Vault {
     fn sweep(&self) {
         let limit = self.limit();
         abandoned(&self.pinned);
-        if let Some(shared) = self.shared_known() {
-            abandoned(shared);
-        }
         let room = limit.saturating_sub(footprint(&self.root.join(FOREIGN)));
         let own = evict(&self.root, room);
         *self.used.lock().unwrap_or_else(|held| held.into_inner()) = Some(own);
@@ -777,53 +708,25 @@ impl Shelf {
         self.find_in(prk, Place::Pinned, id, "")
     }
 
-    /// Where this shelf keeps new plain downloads: the shared folder when it can be written,
-    /// or else the private downloads folder.
-    fn plain_folder(&self) -> PathBuf {
-        match self.vault.shared_folder() {
-            Some(shared) => shared.join(self.provider),
-            None => self.folder(Place::Pinned),
-        }
-    }
-
-    /// The name of the index file of a plain download of track `id`: a plain hash of the id,
+    /// The index file of a plain download of track `id`. Its name is a plain hash of the id,
     /// since a plain download is found without the key.
-    fn index_name(&self, id: &str) -> String {
+    fn index_path(&self, id: &str) -> PathBuf {
         let mut context = digest::Context::new(&digest::SHA256);
         for part in [self.provider, id, &self.scope] {
             context.update(part.as_bytes());
             context.update(&[0]);
         }
-        hex(&context.finish().as_ref()[..16])
+        let name = hex(&context.finish().as_ref()[..16]);
+        self.folder(Place::Pinned).join(INDEX).join(name)
     }
 
     /// The audio file of a plain download of track `id` and the facts its index carries, or
     /// `None` when there is none. An index whose file is gone is removed.
     fn plain_file(&self, id: &str) -> Option<(PathBuf, Vec<u8>)> {
-        self.plain_entry(id).map(|(path, facts, _)| (path, facts))
-    }
-
-    /// The audio file, facts and index of a plain download of track `id`, from the shared
-    /// folder or else the private one it may not have moved out of yet.
-    fn plain_entry(&self, id: &str) -> Option<(PathBuf, Vec<u8>, PathBuf)> {
         if !self.plain {
             return None;
         }
-        let private = self.folder(Place::Pinned);
-        let shared = self.plain_folder();
-        let name = self.index_name(id);
-        let mut places = vec![shared.clone()];
-        if shared != private {
-            places.push(private);
-        }
-        places
-            .into_iter()
-            .find_map(|folder| self.plain_in(&folder, &name))
-    }
-
-    /// The plain download whose index is called `name` in `folder`.
-    fn plain_in(&self, folder: &Path, name: &str) -> Option<(PathBuf, Vec<u8>, PathBuf)> {
-        let index = folder.join(INDEX).join(name);
+        let index = self.index_path(id);
         let read = fs::read(&index).ok()?;
         let at = read.iter().position(|byte| *byte == b'\n')?;
         let name = std::str::from_utf8(&read[..at]).ok()?;
@@ -831,12 +734,12 @@ impl Shelf {
             log::warn!("vault: a {} index names no usable file", self.provider);
             return None;
         }
-        let path = folder.join(name);
+        let path = self.folder(Place::Pinned).join(name);
         if !path.is_file() {
             fs::remove_file(&index).ok();
             return None;
         }
-        Some((path, read[at + 1..].to_vec(), index))
+        Some((path, read[at + 1..].to_vec()))
     }
 
     /// The plain download of track `id`, ready to play.
@@ -863,7 +766,7 @@ impl Shelf {
 
     /// Removes the plain download of track `id` and its index.
     fn discard_plain(&self, id: &str) {
-        let Some((path, _, index)) = self.plain_entry(id) else {
+        let Some((path, _)) = self.plain_file(id) else {
             return;
         };
         match fs::remove_file(&path) {
@@ -877,7 +780,7 @@ impl Shelf {
                 return;
             }
         }
-        fs::remove_file(index).ok();
+        fs::remove_file(self.index_path(id)).ok();
     }
 
     /// The folder this shelf keeps its entries in within `place`.
@@ -979,19 +882,11 @@ impl Shelf {
     /// Opens a temporary file for a plain download of track `id`. Its file name and extension
     /// are settled when it is kept, once the label and the format are known.
     fn begin_plain(&self, id: &str, facts: Describe) -> Result<Pending> {
-        let folder = self.plain_folder();
-        let index = folder.join(INDEX).join(self.index_name(id));
-        match folder.starts_with(self.vault.base(Place::Pinned)) {
-            true => {
-                create_private(self.vault.base(Place::Pinned))?;
-                create_private(&folder)?;
-                create_private(&folder.join(INDEX))?;
-            }
-            // the shared folder is there for other apps to read, and its storage keeps no
-            // owner-only permissions anyway
-            false => fs::create_dir_all(folder.join(INDEX))
-                .with_context(|| format!("cannot create {}", folder.display()))?,
-        }
+        let index = self.index_path(id);
+        let folder = self.folder(Place::Pinned);
+        create_private(self.vault.base(Place::Pinned))?;
+        create_private(&folder)?;
+        create_private(&folder.join(INDEX))?;
         let name = index
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -1661,19 +1556,34 @@ fn footprint(path: &Path) -> u64 {
         .sum()
 }
 
-/// Where Android keeps plain downloads for other apps to see: Sonora's folder in the phone's
-/// shared Music folder.
-const SHARED_MUSIC: Option<&str> = match cfg!(target_os = "android") {
+/// Where 0.50.3 kept Android's plain downloads: the shared Music folder, which every
+/// file manager and player could see. Downloads are private again, and what went there is
+/// brought back by [`bring_back`].
+const LEGACY_SHARED: Option<&str> = match cfg!(target_os = "android") {
     true => Some("/storage/emulated/0/Music/Sonora"),
     false => None,
 };
 
-/// How long a shared folder that could not be written is left before it is tried again.
-const SHARED_RETRY: Duration = Duration::from_secs(5);
+/// Moves the plain downloads an earlier version kept in `shared` back into `pinned`, and
+/// removes the folders it leaves empty. A song saved there on purpose, which no index names,
+/// stays where it is.
+fn bring_back(shared: &Path, pinned: &Path) {
+    move_plain(shared, pinned);
+    for shelf in fs::read_dir(shared).into_iter().flatten().flatten() {
+        let name = shelf.file_name();
+        if name.to_string_lossy().starts_with(".probe.") {
+            fs::remove_file(shelf.path()).ok();
+            continue;
+        }
+        if shelf.path().is_dir() {
+            fs::remove_dir(shelf.path().join(INDEX)).ok();
+            fs::remove_dir(shelf.path()).ok();
+        }
+    }
+}
 
-/// Moves the plain downloads under `from` to the same shelves under `to`, each file before its
-/// index so a download is always found in one place or the other. A download already in `to`
-/// is left where it is.
+/// Moves every plain download under `from` to the same place under `to`, leaving any that
+/// would replace a file already there.
 fn move_plain(from: &Path, to: &Path) {
     let mut moved = 0;
     for shelf in fs::read_dir(from).into_iter().flatten().flatten() {
@@ -1760,51 +1670,27 @@ fn abandoned(root: &Path) -> Vec<(PathBuf, SystemTime, u64)> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
-    use super::{INDEX, move_plain};
+    use super::*;
 
     #[test]
-    fn plain_downloads_move_with_their_index() {
-        let from = tempfile::tempdir().unwrap();
-        let to = tempfile::tempdir().unwrap();
-        let shelf = from.path().join("deezer");
+    fn downloads_kept_in_the_shared_folder_come_back_and_saved_songs_stay() {
+        let dir = tempfile::tempdir().unwrap();
+        let (shared, pinned) = (dir.path().join("shared"), dir.path().join("pinned"));
+        let shelf = shared.join("deezer");
         fs::create_dir_all(shelf.join(INDEX)).unwrap();
-        fs::write(shelf.join("Song.flac"), b"audio").unwrap();
-        fs::write(shelf.join(INDEX).join("abc"), b"Song.flac\nfacts").unwrap();
+        fs::write(shelf.join("Artist - Song.audio"), b"audio").unwrap();
+        fs::write(shelf.join(INDEX).join("abc"), b"Artist - Song.audio\nfacts").unwrap();
+        fs::write(shared.join("Artist - Saved.mp3"), b"mp3").unwrap();
 
-        move_plain(from.path(), to.path());
+        bring_back(&shared, &pinned);
 
-        let moved = to.path().join("deezer");
-        assert_eq!(fs::read(moved.join("Song.flac")).unwrap(), b"audio");
+        let back = pinned.join("deezer");
         assert_eq!(
-            fs::read(moved.join(INDEX).join("abc")).unwrap(),
-            b"Song.flac\nfacts"
+            fs::read(back.join("Artist - Song.audio")).unwrap(),
+            b"audio"
         );
-        assert!(!shelf.join("Song.flac").exists());
-        assert!(!shelf.join(INDEX).join("abc").exists());
-    }
-
-    #[test]
-    fn a_download_already_shared_stays_put() {
-        let from = tempfile::tempdir().unwrap();
-        let to = tempfile::tempdir().unwrap();
-        for root in [from.path(), to.path()] {
-            fs::create_dir_all(root.join("tidal").join(INDEX)).unwrap();
-            fs::write(root.join("tidal").join("Song.m4a"), root.to_str().unwrap()).unwrap();
-        }
-        fs::write(
-            from.path().join("tidal").join(INDEX).join("x"),
-            b"Song.m4a\n",
-        )
-        .unwrap();
-
-        move_plain(from.path(), to.path());
-
-        assert!(from.path().join("tidal").join("Song.m4a").exists());
-        assert_eq!(
-            fs::read_to_string(to.path().join("tidal").join("Song.m4a")).unwrap(),
-            to.path().to_str().unwrap()
-        );
+        assert!(back.join(INDEX).join("abc").is_file());
+        assert!(!shelf.exists());
+        assert!(shared.join("Artist - Saved.mp3").is_file());
     }
 }
