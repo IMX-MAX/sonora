@@ -54,6 +54,21 @@ const VEIL: f32 = 0.3;
 const HAZE: f32 = 0.45;
 const VERSE_FADE: f32 = 1.25;
 const PAST: f32 = 0.4;
+/// A word sung for at least `HELD` glows while it lasts: the glow swells over `GLOW_SWELL`,
+/// fades over `GLOW_FADE` after the word, is `GLOW` strong and reaches `GLOW_REACH` verse sizes.
+const HELD: std::time::Duration = std::time::Duration::from_millis(1000);
+const GLOW_SWELL: std::time::Duration = std::time::Duration::from_millis(600);
+const GLOW_FADE: std::time::Duration = std::time::Duration::from_millis(500);
+const GLOW: f32 = 0.7;
+const GLOW_REACH: f32 = 0.3;
+/// The dots of a wordless stretch, in verse sizes: the room each takes and the space between
+/// them. They swell by `DOT_BREATH` `DOT_BREATHS` times over the stretch and shrink away over
+/// what is left of it past `DOT_LEAVE`.
+const DOT_CELL: f32 = 0.42;
+const DOT_GAP: f32 = 0.3;
+const DOT_BREATH: f32 = 0.12;
+const DOT_BREATHS: f32 = 2.;
+const DOT_LEAVE: f32 = 0.9;
 const AHEAD: f32 = 0.6;
 const REVEAL: f32 = 0.6;
 const ACTIVE_VERSE_GROWTH: Pixels = px(2.);
@@ -2756,6 +2771,13 @@ fn karaoke_lane(
         (Some(&(start, end, tail)), _) => swept(start, end, position, tail),
         (None, _) => 0.,
     };
+    let glow = |word: usize| match windows.get(word) {
+        Some(&(start, end, _)) => held_glow(start, end, position),
+        None => 0.,
+    };
+    let halo = |level: f32| {
+        gpui::TextShadow::new(sung.karaoke_tint.opacity(GLOW * level)).blur(verse * GLOW_REACH)
+    };
     // a right-to-left line is read from its right edge, so its fill grows from there, and the
     // text inside it hangs from that edge to line up with the text beneath
     let rtl = plan.rtl;
@@ -2806,11 +2828,34 @@ fn karaoke_lane(
             .text_left()
             .children((0..plan.rows.len()).map(|row| {
                 let reveal = revealed(plan, row, &windows, position, edge_fade);
+                // A held word glows where it sits in the row, under the row's own text.
+                let mut offset = px(0.);
+                let halos = plan.rows[row]
+                    .clone()
+                    .filter_map(|index| {
+                        let before = offset;
+                        offset += plan.widths.get(index).copied().unwrap_or(px(0.));
+                        let level = glow(spoken.get(index).copied().unwrap_or(index));
+                        (level > 0.).then(|| {
+                            div()
+                                .absolute()
+                                .top_0()
+                                .map(|this| match rtl {
+                                    true => this.right(before),
+                                    false => this.left(before),
+                                })
+                                .whitespace_nowrap()
+                                .text_color(gpui::transparent_black())
+                                .text_shadow([halo(level)])
+                                .child(fragments[index].clone())
+                        })
+                    })
+                    .collect::<Vec<_>>();
                 lifted(
                     div()
                         .flex()
                         .when(hugs_end(voice, sung.mirrored), |this| this.justify_end())
-                        .child(lit(plan.text[row].clone(), reveal)),
+                        .child(lit(plan.text[row].clone(), reveal).children(halos)),
                     sung,
                 )
             })),
@@ -2835,7 +2880,9 @@ fn karaoke_lane(
                         false => 0.,
                     },
                 };
+                let level = glow(spoken.get(index).copied().unwrap_or(index));
                 lit(fragments[index].clone(), reveal)
+                    .when(level > 0., |this| this.text_shadow([halo(level)]))
             })),
     }
 }
@@ -3438,6 +3485,21 @@ fn swept(
     }
 }
 
+/// How strongly a word glows, from 0 to 1. Only a word held for `HELD` or longer glows: it
+/// swells as the word starts and fades once the word is over.
+fn held_glow(
+    start: std::time::Duration,
+    end: std::time::Duration,
+    position: std::time::Duration,
+) -> f32 {
+    if end.saturating_sub(start) < HELD || position < start {
+        return 0.;
+    }
+    let swell = ease_out_cubic(progress_between(start, start + GLOW_SWELL, position));
+    let fade = 1. - progress_between(end, end + GLOW_FADE, position);
+    swell * fade
+}
+
 fn progress_between(
     start: std::time::Duration,
     end: std::time::Duration,
@@ -3680,31 +3742,39 @@ fn background_line_singing(
     !line_active && position >= line.start && line.sung_end().is_some_and(|end| position < end)
 }
 
+/// The three dots that stand in for a stretch with no words. They light one after another as
+/// the stretch plays, breathe together while it lasts and shrink away as the next line nears.
 fn instrumental_row(progress: f32, past: bool, verse: Pixels, theme: &ui::Theme) -> Div {
-    let note_size = verse * 1.;
+    let cell = verse * DOT_CELL;
+    let breath = 1. + DOT_BREATH * (progress * DOT_BREATHS * std::f32::consts::TAU).sin();
+    let leaving = 1. - progress_within(DOT_LEAVE, 1., progress);
+    let scale = match past {
+        true => 1.,
+        false => breath * leaving,
+    };
     div()
         .flex()
         .items_center()
-        .gap_2()
+        .gap(verse * DOT_GAP)
         .py(verse * 0.45)
         .children((0..3).map(|index| {
-            let note_progress = (progress * 3. - index as f32).clamp(0., 1.);
+            let lit = (progress * 3. - index as f32).clamp(0., 1.);
             let tint = match past {
                 true => quiet(theme).opacity(PAST),
-                false => mix(quiet(theme).opacity(AHEAD), theme.primary, note_progress),
+                false => mix(quiet(theme).opacity(AHEAD), theme.primary, lit),
             };
             div()
-                .size(note_size)
+                .size(cell)
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(
-                    svg()
-                        .path(icons::path("icons/music-2.svg"))
-                        .size(note_size)
-                        .text_color(tint),
-                )
+                .child(div().size(cell * scale).rounded_full().bg(tint))
         }))
+}
+
+/// Where `value` lies between `from` and `to`, clamped to 0 and 1.
+fn progress_within(from: f32, to: f32, value: f32) -> f32 {
+    ((value - from) / (to - from)).clamp(0., 1.)
 }
 
 fn wordless(key: &'static str, icon: &'static str) -> gpui::AnyElement {
