@@ -131,6 +131,23 @@ public class SonoraActivity extends NativeActivity {
         });
     }
 
+    /** Sends the app to the background, as the back button does on the first page. */
+    public static void leaveApp() {
+        final SonoraActivity act = sInstance;
+        if (act == null) {
+            return;
+        }
+        act.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    act.moveTaskToBack(true);
+                } catch (Throwable ignored) {
+                }
+            }
+        });
+    }
+
     public static void hideSoftKeyboard() {
         final SonoraActivity act = sInstance;
         if (act == null) {

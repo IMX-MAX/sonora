@@ -138,10 +138,7 @@ impl TitleBar {
         let turn = self.spin.turn(window, cx);
         let hover = cx.theme().sidebar_accent;
         let navigation = self.navigation.read(cx);
-        let (can_back, can_forward) = (navigation.can_go_back(), navigation.can_go_forward());
         let refreshes = navigation.current().refreshes();
-        let back = self.navigation.clone();
-        let forward = self.navigation.clone();
 
         div()
             .id("titlebar-history")
@@ -153,45 +150,6 @@ impl TitleBar {
             .gap_1()
             .occlude()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .child(
-                Button::new("history-back")
-                    .ghost()
-                    .icon("icons/chevron-left.svg")
-                    .tooltip("nav-back")
-                    .disabled(!can_back)
-                    .size_8()
-                    .px_0()
-                    .when(can_back, |button| {
-                        button
-                            .hover(move |style| style.bg(hover))
-                            .active(move |style| style.bg(hover))
-                    })
-                    .on_click(move |_, _, cx| {
-                        back.update(cx, |navigation, cx| navigation.back(cx))
-                    }),
-            )
-            .when(
-                can_forward || crate::chrome::Chrome::window_room(window).fits(ui::Room::Snug),
-                |history| {
-                    history.child(
-                        Button::new("history-forward")
-                            .ghost()
-                            .icon("icons/chevron-right.svg")
-                            .tooltip("nav-forward")
-                            .disabled(!can_forward)
-                            .size_8()
-                            .px_0()
-                            .when(can_forward, |button| {
-                                button
-                                    .hover(move |style| style.bg(hover))
-                                    .active(move |style| style.bg(hover))
-                            })
-                            .on_click(move |_, _, cx| {
-                                forward.update(cx, |navigation, cx| navigation.forward(cx))
-                            }),
-                    )
-                },
-            )
             .when(refreshes, |history| {
                 history.child(
                     Button::new("history-refresh")

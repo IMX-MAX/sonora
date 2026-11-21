@@ -613,9 +613,10 @@ impl Root {
         }
     }
 
-    /// Escape that nothing on the page took. A focused text field lets go of the keyboard first,
-    /// on any screen. Otherwise it leaves fullscreen, and on a settings page it closes an open
-    /// menu or dialog, then clears the search. It never leaves settings.
+    /// Escape that nothing on the page took, which is also the system back button. A focused
+    /// text field lets go of the keyboard first, on any screen. Otherwise it leaves fullscreen,
+    /// closes what the page has open, then a sidebar over the page, and at last turns back a
+    /// page. On the first page it sends the app to the background.
     fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let typing = window
             .context_stack()
@@ -638,26 +639,40 @@ impl Root {
             back(cx);
             return;
         }
-        match router::trail(cx).read(cx).current() {
-            Destination::Equalizer => {
-                self.screens.equalizer.update(cx, |view, cx| {
-                    if view.escape() {
-                        cx.notify();
-                    }
-                });
-            }
-            Destination::Settings(_) => {
-                self.screens.settings.update(cx, |view, cx| view.escape(cx));
-            }
-            Destination::Artist(_) => {
-                if let Some(artist) = self.screens.artist.clone() {
-                    artist.update(cx, |view, cx| view.escape(cx));
+        let taken = match router::trail(cx).read(cx).current() {
+            Destination::Equalizer => self.screens.equalizer.update(cx, |view, cx| {
+                let taken = view.escape();
+                if taken {
+                    cx.notify();
                 }
+                taken
+            }),
+            Destination::Settings(_) => {
+                self.screens.settings.update(cx, |view, cx| view.escape(cx))
             }
-            Destination::Song(_) => {
-                self.screens.song.update(cx, |view, cx| view.escape(cx));
-            }
-            _ => {}
+            Destination::Artist(_) => self
+                .screens
+                .artist
+                .clone()
+                .is_some_and(|artist| artist.update(cx, |view, cx| view.escape(cx))),
+            Destination::Song(_) => self.screens.song.update(cx, |view, cx| view.escape(cx)),
+            _ => false,
+        };
+        if taken {
+            return;
+        }
+        // Escape is also the system back button: with nothing left to close it shuts a sidebar
+        // that lies over the page, then turns back a page, and on the first page leaves the app.
+        let closed = self
+            .shells
+            .workspace
+            .update(cx, |workspace, cx| workspace.close_overlay(window, cx));
+        if closed {
+            return;
+        }
+        match router::trail(cx).read(cx).can_go_back() {
+            true => back(cx),
+            false => window.minimize_window(),
         }
     }
 

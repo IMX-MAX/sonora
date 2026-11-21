@@ -11,9 +11,7 @@ use ui::{
     shown_listing, veiled,
 };
 
-use crate::chrome::{
-    AppNotice, Chrome, PlayerBar, SidebarLeft, SidebarRight, SwipeCue, TitleBarOptions,
-};
+use crate::chrome::{AppNotice, Chrome, PlayerBar, SidebarLeft, SidebarRight, TitleBarOptions};
 use crate::shared::menus::CardMenu;
 use crate::shells::Shell;
 
@@ -24,7 +22,6 @@ pub(crate) struct Workspace {
     sidebar_right: Entity<SidebarRight>,
     card_menu: Entity<CardMenu>,
     notice: Entity<AppNotice>,
-    swipe_cue: Entity<SwipeCue>,
     content: AnyView,
     /// A screen's own header, floated over the top of the page and outside its transition.
     /// The page pads itself to start beneath it.
@@ -57,7 +54,6 @@ impl Workspace {
             sidebar_right,
             card_menu: CardMenu::entity(cx),
             notice: cx.new(AppNotice::new),
-            swipe_cue: cx.new(SwipeCue::new),
             content,
             header: None,
             cached: true,
@@ -72,6 +68,21 @@ impl Workspace {
 
     pub fn toggle_sidebar(&self, cx: &mut Context<Self>) {
         self.sidebar.update(cx, |sidebar, cx| sidebar.toggle(cx));
+    }
+
+    /// Closes a sidebar that lies over the page, the right one first, and says whether one was
+    /// open. The system back button does this before it turns the page.
+    pub fn close_overlay(&self, window: &Window, cx: &mut Context<Self>) -> bool {
+        let right = self.sidebar_right.read(cx);
+        if right.is_open() && right.covers_content(window) {
+            self.sidebar_right.update(cx, |panel, cx| panel.close(cx));
+            return true;
+        }
+        if self.sidebar.read(cx).overlays() {
+            self.sidebar.update(cx, |sidebar, cx| sidebar.toggle(cx));
+            return true;
+        }
+        false
     }
 
     pub fn toggle_sidebar_right(&self, cx: &mut Context<Self>) {
@@ -281,14 +292,6 @@ impl Render for Workspace {
                             .ml(overlay_width)
                             .when(overlay, |this| this.overflow_hidden())
                             .when(covered, |this| this.hidden())
-                            // A two-finger swipe across the page steps through its history,
-                            // as in a browser.
-                            .on_scroll_wheel({
-                                let cue = self.swipe_cue.clone();
-                                move |event, window, cx| {
-                                    cue.update(cx, |cue, cx| cue.follow(event, window, cx));
-                                }
-                            })
                             .child(
                                 div()
                                     .relative()
@@ -337,8 +340,7 @@ impl Render for Workspace {
                                                 .child(header),
                                         )
                                     }),
-                            )
-                            .child(self.swipe_cue.clone()),
+                            ),
                     )
                     .child(self.sidebar_right.clone())
                     .when(overlay, |this| this.child(self.sidebar.clone())),

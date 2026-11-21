@@ -591,7 +591,9 @@ impl PlatformWindow for AndroidWindow {
 
     fn set_background_appearance(&self, _background_appearance: WindowBackgroundAppearance) {}
 
-    fn minimize(&self) {}
+    fn minimize(&self) {
+        call_activity_void(&android_app(), jni::jni_str!("leaveApp"));
+    }
 
     fn zoom(&self) {}
 
@@ -851,22 +853,15 @@ impl AndroidPlatform {
                     InputStatus::Handled
                 }
                 InputEvent::KeyEvent(key) => {
-                    if key.action() == KeyAction::Down && key.key_code() == Keycode::Back {
-                        let window = self.state.borrow().window.clone();
-                        if let Some(window) = window {
-                            let enabled = window.0.borrow().back_enabled;
-                            if enabled {
-                                let cb = window.0.borrow_mut().callbacks.back_handler.take();
-                                if let Some(mut cb) = cb {
-                                    cb();
-                                    let mut inner = window.0.borrow_mut();
-                                    if inner.callbacks.back_handler.is_none() {
-                                        inner.callbacks.back_handler = Some(cb);
-                                    }
-                                    return InputStatus::Handled;
-                                }
-                            }
+                    // The system back button and gesture reach the views as Escape, the key
+                    // that already closes whatever is open, and the app decides what an Escape
+                    // nothing took does. Both halves are claimed so the system never finishes
+                    // the activity itself.
+                    if key.key_code() == Keycode::Back {
+                        if key.action() == KeyAction::Down {
+                            self.dispatch_key_press("escape", None);
                         }
+                        return InputStatus::Handled;
                     }
                     InputStatus::Unhandled
                 }
